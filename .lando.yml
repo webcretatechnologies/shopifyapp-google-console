@@ -1,0 +1,73 @@
+name: shopify-google
+
+services:
+  node:
+    type: node:18
+    ssl: true
+    sslport: 3001
+    command: sh /app/server-start.sh
+    overrides:
+      ports:
+        - '3000:3000'
+        - '3001:3001'
+      environment:
+        NODE_ENV: development
+        PORT: 3000
+
+  client:
+    type: node:18
+    ssl: true
+    command: sh /app/client/client-start.sh
+    overrides:
+      ports:
+        - '5173:5173'
+      environment:
+        NODE_ENV: development
+        VITE_API_URL: https://shopify-google.lndo.site
+
+  database:
+    type: mysql:8.0
+    portforward: 3307
+    creds:
+      user: shopify
+      password: shopify_secret
+      database: shopify_analytics
+
+  cache:
+    type: redis:7
+    portforward: 6380
+
+  pma:
+    type: phpmyadmin
+    hosts:
+      - database
+
+tooling:
+  npm:
+    service: node
+  migrate:
+    service: node
+    cmd: node server/database/migrate.js
+  seed:
+    service: node
+    cmd: node server/database/seed.js
+  install:
+    service: node
+    cmd: npm install
+  client-install:
+    service: client
+    cmd: sh -c "cd /app/client && npm install"
+  mysql:
+    service: database
+    cmd: mysql -u shopify -pshopify_secret shopify_analytics
+  build-client:
+    service: client
+    cmd: sh -c "cd /app/client && npm run build"
+
+proxy:
+  node:
+    - shopify-google.lndo.site:3000
+  client:
+    - app.shopify-google.lndo.site:5173
+  pma:
+    - pma.shopify-google.lndo.site:80

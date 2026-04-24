@@ -1,0 +1,7 @@
+{
+  "watch": ["server"],
+  "ext": "js,json",
+  "ignore": ["server/logs/*", "node_modules/*", "client/*"],
+  "exitcrash": true,
+  "delay": 1000
+}
