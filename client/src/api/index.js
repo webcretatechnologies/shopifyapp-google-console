@@ -21,9 +21,16 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   r => r.data,
   err => {
+    // On admin 401: just clear the token. Don't force-navigate here — that
+    // races with React Router and was contributing to flicker/blank states.
+    // PrivateAdminRoute notices the missing token and routes to /admin/login.
     if (err.response?.status === 401 && window.location.pathname.startsWith('/admin')) {
       localStorage.removeItem('admin_token');
-      window.location.href = '/admin/login';
+      // Only hard-navigate if we're already on a page deeper than /admin/login.
+      // (Avoids navigation loops when a /me call fails on the login page.)
+      if (window.location.pathname !== '/admin/login') {
+        window.location.href = '/admin/login?expired=1';
+      }
     }
     return Promise.reject(err.response?.data || err);
   }
@@ -79,6 +86,8 @@ export const insightsApi = {
   seoSuggestions:() => api.get('/insights/seo-suggestions'),
   adsCorrelation:() => api.get('/insights/ads-correlation'),
   syncOrders:    () => api.post('/insights/sync-orders'),
+  syncStatus:    () => api.get('/insights/sync-status'),
+  syncNow:       () => api.post('/insights/sync-now'),
 };
 
 // Products API
@@ -115,6 +124,9 @@ export const adminApi = {
   updateAdmin: (id, data) => api.patch(`/admin/admins/${id}`, data),
   config: () => api.get('/admin/config'),
   saveConfig: (patch) => api.put('/admin/config', { patch }),
+  emailTemplates: () => api.get('/admin/email-templates'),
+  saveEmailTemplate: (data) => api.put('/admin/email-templates', data),
+  previewEmailTemplate: (data) => api.post('/admin/email-templates/preview', data),
 };
 
 // AI Visibility API
@@ -126,6 +138,34 @@ export const aiVisibilityApi = {
   results:         (id) => api.get(`/ai-visibility/runs/${id}/results`),
   defaultPrompts:  () => api.get('/ai-visibility/default-prompts'),
   run:             (data) => api.post('/ai-visibility/run', data || {}),
+};
+
+// Content Creation API
+export const contentApi = {
+  drafts:        (productId) => api.get(`/content/drafts/${productId}`),
+  generate:      (data) => api.post('/content/generate', data),
+  updateDraft:   (id, data) => api.put(`/content/drafts/${id}`, data),
+  publishDraft:  (id) => api.post(`/content/drafts/${id}/publish`),
+  deleteDraft:   (id) => api.delete(`/content/drafts/${id}`),
+};
+
+// FAQs API
+export const faqsApi = {
+  forProduct:    (productId) => api.get(`/faqs/product/${productId}`),
+  generate:      (data) => api.post('/faqs/generate', data),
+  create:        (data) => api.post('/faqs', data),
+  update:        (id, data) => api.put(`/faqs/${id}`, data),
+  reorder:       (ordering) => api.post('/faqs/reorder', { ordering }),
+  delete:        (id) => api.delete(`/faqs/${id}`),
+};
+
+// Structured Markup API
+export const markupApi = {
+  config:           () => api.get('/structured-markup/config'),
+  saveConfig:       (data) => api.put('/structured-markup/config', data),
+  preview:          (productId) => api.get(`/structured-markup/preview/${productId}`),
+  installScriptTag: () => api.post('/structured-markup/script-tag/install'),
+  uninstallScriptTag: () => api.post('/structured-markup/script-tag/uninstall'),
 };
 
 // Site Audit API

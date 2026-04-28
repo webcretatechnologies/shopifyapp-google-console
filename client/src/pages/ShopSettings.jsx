@@ -14,14 +14,24 @@ const TABS = [
   { id: 'google',        content: 'Google API',    accessibilityLabel: 'Google API',    panelID: 'google-panel' },
 ];
 
+// Only events the merchant can opt out of. Welcome / Google connected /
+// Subscription updates are system events controlled by the super admin and
+// always send (they don't appear here).
 const EMAIL_EVENTS = [
-  { key: 'welcome',         label: 'Welcome email',                   help: 'One-time email when the app is first installed' },
-  { key: 'googleConnected', label: 'Google account connected',        help: 'Confirmation when Google OAuth completes' },
-  { key: 'subscription',    label: 'Subscription updates',            help: 'Trial started, plan activated, plan changed' },
-  { key: 'audit',           label: 'Site Audit complete',             help: 'After every Site Audit run finishes' },
-  { key: 'aiVisibility',    label: 'AI Visibility run complete',      help: 'After every AI Visibility analysis finishes' },
-  { key: 'stockAlerts',     label: 'Critical stock alerts',           help: 'When a high-traffic product goes out of stock' },
-  { key: 'weeklyReport',    label: 'Weekly performance report',       help: 'Summary digest sent every Monday' },
+  { key: 'audit',        label: 'Site Audit complete',        help: 'After every Site Audit run finishes' },
+  { key: 'aiVisibility', label: 'AI Visibility run complete', help: 'After every AI Visibility analysis finishes' },
+  { key: 'stockAlerts',  label: 'Critical stock alerts',      help: 'When a high-traffic product goes out of stock' },
+  { key: 'weeklyReport', label: 'Weekly performance report',  help: 'Weekly summary digest — pick which day it lands below' },
+];
+
+const WEEKDAY_OPTIONS = [
+  { label: 'Sunday',    value: '0' },
+  { label: 'Monday',    value: '1' },
+  { label: 'Tuesday',   value: '2' },
+  { label: 'Wednesday', value: '3' },
+  { label: 'Thursday',  value: '4' },
+  { label: 'Friday',    value: '5' },
+  { label: 'Saturday',  value: '6' },
 ];
 
 const DATE_RANGE_OPTIONS = [
@@ -136,18 +146,21 @@ function GeneralTab({ settings, onSave }) {
 function NotificationsTab({ settings, onSave }) {
   const [email, setEmail] = useState('');
   const [prefs, setPrefs] = useState({});
+  const [weeklyDay, setWeeklyDay] = useState('1');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (settings) {
       setEmail(settings.notification_email || settings.shop_email || '');
       setPrefs(settings.email_prefs || {});
+      setWeeklyDay(String(settings.weekly_report_day != null ? settings.weekly_report_day : 1));
     }
   }, [settings]);
 
   const save = useMutation(() => onSave({
     notification_email: email,
     email_prefs: prefs,
+    weekly_report_day: parseInt(weeklyDay, 10),
   }), {
     onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2500); },
   });
@@ -219,6 +232,29 @@ function NotificationsTab({ settings, onSave }) {
           </BlockStack>
         </BlockStack>
       </Card>
+
+      {/* Weekly report — pick which day it lands */}
+      {prefs.weeklyReport !== false && (
+        <Card>
+          <BlockStack gap="400">
+            <BlockStack gap="100">
+              <Text variant="headingMd" as="h2">Weekly report — delivery day</Text>
+              <Text variant="bodySm" as="p" tone="subdued">
+                Which day of the week should the weekly performance report be sent? Sent at 08:00 UTC on that day.
+              </Text>
+            </BlockStack>
+            <Box maxWidth="240px">
+              <Select
+                label="Day of week"
+                labelHidden
+                options={WEEKDAY_OPTIONS}
+                value={weeklyDay}
+                onChange={setWeeklyDay}
+              />
+            </Box>
+          </BlockStack>
+        </Card>
+      )}
 
       <InlineStack>
         <Button variant="primary" onClick={() => save.mutate()} loading={save.isLoading}>

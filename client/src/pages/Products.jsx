@@ -5,95 +5,172 @@ import {
   InlineStack, Box, Spinner, Banner, Thumbnail, Icon,
   Select, Pagination, EmptyState, Collapsible,
 } from '@shopify/polaris';
-import { SearchIcon } from '@shopify/polaris-icons';
+import { SearchIcon, ImageIcon } from '@shopify/polaris-icons';
 import { productsApi } from '../api';
 
+// Map our internal status → Polaris Badge tone (matches Shopify admin pills:
+// "Active" = success-green, "Draft" = info-blue, "Archived" = subdued)
 function statusTone(status) {
   if (status === 'active')   return 'success';
-  if (status === 'draft')    return 'attention';
+  if (status === 'draft')    return 'info';
   if (status === 'archived') return 'subdued';
   return 'subdued';
 }
 
-const variantTableStyle = {
+// "1,129 in stock for 25 variants" / "0 in stock for 20 variants" / "Inventory not tracked"
+function inventoryDisplay(variants) {
+  if (!variants?.length) return { text: 'No variants', tone: 'subdued', total: 0 };
+  // If every variant has inventory_quantity null AND inventory_management null → not tracked
+  const tracked = variants.filter(v => v.inventory_quantity != null);
+  if (!tracked.length) return { text: 'Inventory not tracked', tone: 'subdued', total: null };
+  const total = tracked.reduce((s, v) => s + (v.inventory_quantity || 0), 0);
+  const variantWord = variants.length === 1 ? 'variant' : 'variants';
+  if (total <= 0) return { text: `0 in stock for ${variants.length} ${variantWord}`, tone: 'critical', total: 0 };
+  return { text: `${total.toLocaleString()} in stock for ${variants.length} ${variantWord}`, tone: 'normal', total };
+}
+
+// ── Real <table> styles ─────────────────────────────────────────────────────
+// Using a real <table> guarantees columns auto-align between header and rows
+// (the grid-based layout was drifting). All visual tokens come from Polaris
+// CSS variables so the colors/fonts stay consistent with the theme.
+const tableStyle = {
   width: '100%',
   borderCollapse: 'collapse',
-  fontSize: '13px',
+  tableLayout: 'auto',
 };
 const thStyle = {
   textAlign: 'left',
-  padding: '8px 12px',
-  color: '#6d7175',
+  padding: '12px 16px',
+  background: 'var(--p-color-bg-surface-secondary)',
+  color: 'var(--p-color-text-secondary)',
+  fontSize: 11,
   fontWeight: 600,
-  borderBottom: '1px solid #e1e3e5',
+  textTransform: 'uppercase',
+  letterSpacing: '0.4px',
+  borderBottom: '1px solid var(--p-color-border)',
   whiteSpace: 'nowrap',
+  verticalAlign: 'middle',
 };
-const tdStyle = { padding: '8px 12px', verticalAlign: 'middle', borderBottom: '1px solid #f1f2f3' };
+const tdStyle = {
+  padding: '12px 16px',
+  verticalAlign: 'top',
+  borderBottom: '1px solid var(--p-color-border-secondary)',
+};
+
+// Variant detail table (used in the collapsible expansion)
+const vTableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: '13px' };
+const vthStyle = {
+  textAlign: 'left', padding: '8px 12px', color: 'var(--p-color-text-secondary)',
+  fontWeight: 600, borderBottom: '1px solid var(--p-color-border)', whiteSpace: 'nowrap',
+  fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px',
+};
+const vtdStyle = {
+  padding: '8px 12px', verticalAlign: 'middle',
+  borderBottom: '1px solid var(--p-color-border-secondary)',
+};
 
 function ProductRow({ product }) {
   const [open, setOpen] = useState(false);
   const thumb = product.images?.[0]?.src;
   const variantCount = product.variants?.length || 0;
+  const inv = inventoryDisplay(product.variants);
+  // Shopify category isn't in our DB yet — fall back to "—" so the column stays
+  // aligned. (We can backfill from the GraphQL Admin API later.)
+  const category = product.category || '—';
+
+  const invTone = inv.tone === 'critical' ? 'critical' : inv.tone === 'subdued' ? 'subdued' : undefined;
 
   return (
-    <Box borderBlockEndWidth="025" borderColor="border">
-      <Box padding="300">
-        <InlineStack align="space-between" blockAlign="center" wrap={false} gap="300">
-          {/* Left: image + title */}
-          <InlineStack gap="300" blockAlign="center">
-            <Thumbnail
-              source={thumb || 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-2_large.png'}
-              alt={product.title}
-              size="small"
-            />
-            <BlockStack gap="050">
-              <Text variant="bodyMd" fontWeight="semibold">{product.title}</Text>
-              <InlineStack gap="100">
-                {product.vendor && <Text variant="bodySm" tone="subdued">{product.vendor}</Text>}
-                {product.product_type && <Text variant="bodySm" tone="subdued">· {product.product_type}</Text>}
-              </InlineStack>
-            </BlockStack>
-          </InlineStack>
-          {/* Right: badge + count + button */}
-          <InlineStack gap="300" blockAlign="center">
-            <Badge tone={statusTone(product.status)}>{product.status}</Badge>
-            <Text variant="bodySm" tone="subdued">{variantCount} variant{variantCount !== 1 ? 's' : ''}</Text>
-            {variantCount > 0 && (
-              <Button size="slim" variant="plain" onClick={() => setOpen(v => !v)}>
-                {open ? 'Hide variants' : 'Show variants'}
-              </Button>
-            )}
-          </InlineStack>
-        </InlineStack>
-      </Box>
+    <>
+      <tr>
+        {/* PRODUCT — image + title (title wraps when long, like Shopify admin) */}
+        <td style={tdStyle}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0 }}>
+            <div style={{ flexShrink: 0 }}>
+              {thumb
+                ? <Thumbnail source={thumb} alt={product.title} size="small" />
+                : <Thumbnail source={ImageIcon} alt={product.title} size="small" />}
+            </div>
+            <div style={{ minWidth: 0, paddingTop: 2 }}>
+              <Text variant="bodyMd" as="p" fontWeight="semibold" breakWord>{product.title}</Text>
+            </div>
+          </div>
+        </td>
 
-      <Collapsible open={open} id={`variants-${product.id}`}>
-        <Box background="bg-surface-secondary" paddingInline="400" paddingBlock="300">
-          <table style={variantTableStyle}>
-            <thead>
-              <tr>
-                {['Variant', 'SKU', 'Price', 'Stock', 'Barcode'].map(h => (
-                  <th key={h} style={thStyle}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {product.variants?.map(v => (
-                <tr key={v.id}>
-                  <td style={tdStyle}>{v.title}</td>
-                  <td style={tdStyle}>{v.sku || '—'}</td>
-                  <td style={tdStyle}>₹{parseFloat(v.price || 0).toFixed(2)}</td>
-                  <td style={{ ...tdStyle, color: (v.inventory_quantity ?? 0) < 1 ? '#d82c0d' : '#008060', fontWeight: 600 }}>
-                    {v.inventory_quantity ?? '—'}
-                  </td>
-                  <td style={{ ...tdStyle, color: '#6d7175' }}>{v.barcode || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Box>
-      </Collapsible>
-    </Box>
+        {/* STATUS */}
+        <td style={tdStyle}>
+          <Badge tone={statusTone(product.status)}>
+            {product.status?.charAt(0).toUpperCase() + product.status?.slice(1)}
+          </Badge>
+        </td>
+
+        {/* INVENTORY */}
+        <td style={tdStyle}>
+          <Text variant="bodySm" as="p" tone={invTone}>{inv.text}</Text>
+        </td>
+
+        {/* CATEGORY */}
+        <td style={tdStyle}>
+          <Text variant="bodySm" as="p" tone={category === '—' ? 'subdued' : undefined}>{category}</Text>
+        </td>
+
+        {/* PRODUCT TYPE */}
+        <td style={tdStyle}>
+          <Text variant="bodySm" as="p" tone={product.product_type ? undefined : 'subdued'}>
+            {product.product_type || '—'}
+          </Text>
+        </td>
+
+        {/* VARIANTS — replaces the Vendor column per the spec */}
+        <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+          {variantCount > 0 ? (
+            <Button size="slim" variant="plain" onClick={() => setOpen(v => !v)}>
+              {open ? 'Hide variants' : `Show ${variantCount} variant${variantCount !== 1 ? 's' : ''}`}
+            </Button>
+          ) : (
+            <Text variant="bodySm" as="span" tone="subdued">—</Text>
+          )}
+        </td>
+      </tr>
+
+      {/* Expanded variants — a sub-table that spans all 6 columns */}
+      {open && (
+        <tr>
+          <td colSpan={6} style={{ padding: 0, background: 'var(--p-color-bg-surface-secondary)', borderBottom: '1px solid var(--p-color-border-secondary)' }}>
+            <Collapsible open={open} id={`variants-${product.id}`}>
+              <div style={{ padding: '12px 24px' }}>
+                <table style={vTableStyle}>
+                  <thead>
+                    <tr>
+                      {['Variant', 'SKU', 'Price', 'Stock', 'Barcode'].map(h => (
+                        <th key={h} style={vthStyle}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {product.variants?.map(v => (
+                      <tr key={v.id}>
+                        <td style={vtdStyle}>{v.title}</td>
+                        <td style={vtdStyle}>{v.sku || '—'}</td>
+                        <td style={vtdStyle}>₹{parseFloat(v.price || 0).toFixed(2)}</td>
+                        <td style={{
+                          ...vtdStyle,
+                          color: (v.inventory_quantity ?? 0) < 1 ? 'var(--p-color-text-critical)' : 'var(--p-color-text-success)',
+                          fontWeight: 600,
+                        }}>
+                          {v.inventory_quantity ?? '—'}
+                        </td>
+                        <td style={{ ...vtdStyle, color: 'var(--p-color-text-secondary)' }}>{v.barcode || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Collapsible>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -135,16 +212,15 @@ export default function Products() {
       }}
     >
       <BlockStack gap="400">
-
         {syncMsg && (
           <Banner tone={syncMsg.includes('failed') ? 'critical' : 'success'} onDismiss={() => setSyncMsg(null)}>
-            <Text>{syncMsg}</Text>
+            <Text as="p">{syncMsg}</Text>
           </Banner>
         )}
 
-        {/* Stats — 4 cards in one row */}
+        {/* KPI cards */}
         {stats && (
-          <InlineGrid columns={4} gap="400">
+          <InlineGrid columns={{ xs: 2, sm: 4 }} gap="400">
             {[
               { label: 'Total Products', value: stats.total },
               { label: 'Active',         value: stats.active },
@@ -153,25 +229,24 @@ export default function Products() {
             ].map(s => (
               <Card key={s.label}>
                 <BlockStack gap="100" inlineAlign="center">
-                  <Text variant="headingXl" fontWeight="bold">{s.value ?? 0}</Text>
-                  <Text variant="bodySm" tone="subdued">{s.label}</Text>
+                  <Text variant="headingXl" as="p" fontWeight="bold">{s.value ?? 0}</Text>
+                  <Text variant="bodySm" as="p" tone="subdued">{s.label}</Text>
                 </BlockStack>
               </Card>
             ))}
           </InlineGrid>
         )}
 
-        {/* Product list + filters in one card */}
+        {/* Product list — Shopify-admin-style table */}
         <Card padding="0">
           {/* Toolbar */}
           <Box padding="400" borderBlockEndWidth="025" borderColor="border">
             <InlineStack gap="300" blockAlign="center" wrap={false}>
-              {/* Search takes all remaining space */}
               <div style={{ flex: 1 }}>
                 <TextField
                   label="Search"
                   labelHidden
-                  placeholder="Search by title, vendor, type..."
+                  placeholder="Search and filter"
                   value={search}
                   onChange={v => { setSearch(v); setPage(1); }}
                   clearButton
@@ -180,7 +255,6 @@ export default function Products() {
                   prefix={<Icon source={SearchIcon} />}
                 />
               </div>
-              {/* Status filter — fixed width */}
               <div style={{ minWidth: '160px' }}>
                 <Select
                   label="Status"
@@ -195,32 +269,47 @@ export default function Products() {
                   onChange={v => { setStatus(v); setPage(1); }}
                 />
               </div>
-              {/* Result count */}
               {data?.total != null && (
-                <Text variant="bodySm" tone="subdued" whiteSpace="nowrap">
-                  {data.total} product{data.total !== 1 ? 's' : ''}
+                <Text variant="bodySm" as="span" tone="subdued">
+                  {data.total.toLocaleString()} product{data.total !== 1 ? 's' : ''}
                 </Text>
               )}
             </InlineStack>
           </Box>
 
           {isLoading ? (
-            <Box padding="800" textAlign="center"><Spinner /></Box>
+            <Box padding="800"><InlineStack align="center"><Spinner /></InlineStack></Box>
           ) : !data?.products?.length ? (
             <EmptyState
               heading="No products found"
               action={{ content: 'Sync from Shopify', onAction: () => syncMutation.mutate(), loading: syncMutation.isLoading }}
               image="https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-collection-2_large.png"
             >
-              <Text>{search || status ? 'Try a different search or filter.' : 'Click "Sync from Shopify" to import all your products and variants.'}</Text>
+              <p>{search || status ? 'Try a different search or filter.' : 'Click "Sync from Shopify" to import all your products and variants.'}</p>
             </EmptyState>
           ) : (
             <>
-              {data.products.map(p => <ProductRow key={p.id} product={p} />)}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={tableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Product</th>
+                      <th style={{ ...thStyle, width: 110 }}>Status</th>
+                      <th style={{ ...thStyle, width: 220 }}>Inventory</th>
+                      <th style={{ ...thStyle, width: 160 }}>Category</th>
+                      <th style={{ ...thStyle, width: 160 }}>Product type</th>
+                      <th style={{ ...thStyle, width: 160, textAlign: 'right' }}>Variants</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.products.map(p => <ProductRow key={p.id} product={p} />)}
+                  </tbody>
+                </table>
+              </div>
               {data.pages > 1 && (
                 <Box padding="400" borderBlockStartWidth="025" borderColor="border">
                   <InlineStack align="space-between" blockAlign="center">
-                    <Text variant="bodySm" tone="subdued">
+                    <Text variant="bodySm" as="span" tone="subdued">
                       Page {page} of {data.pages}
                     </Text>
                     <Pagination
@@ -235,7 +324,6 @@ export default function Products() {
             </>
           )}
         </Card>
-
       </BlockStack>
     </Page>
   );

@@ -4,16 +4,17 @@ const { ShopSettings } = require('../models');
 const { encrypt, decrypt } = require('../services/encryption');
 const { shopifyAuth } = require('../middleware/shopifyAuth');
 
-// Default opt-in for every event type — used when shop has no email_prefs row yet
+// Default opt-in for every event the merchant CAN opt out of. The "admin-only"
+// events (welcome / googleConnected / subscription) are not toggleable here —
+// they're system events controlled by the super admin.
 const DEFAULT_EMAIL_PREFS = {
-  welcome:         true,
-  googleConnected: true,
-  subscription:    true,
-  audit:           true,
-  aiVisibility:    true,
-  stockAlerts:     true,
-  weeklyReport:    true,
+  audit:        true,
+  aiVisibility: true,
+  stockAlerts:  true,
+  weeklyReport: true,
 };
+
+const VALID_WEEKLY_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 router.get('/', shopifyAuth, async (req, res) => {
   try {
@@ -25,8 +26,15 @@ router.get('/', shopifyAuth, async (req, res) => {
         notification_email: req.shop.email || '',
         shop_email: req.shop.email || '',
         email_prefs: DEFAULT_EMAIL_PREFS,
+        weekly_report_day: 1,
         default_date_range: '28d',
       });
+    }
+    // Strip any legacy admin-only event keys from prefs so the UI never shows them
+    const rawPrefs = settings.email_prefs || {};
+    const cleanPrefs = {};
+    for (const k of Object.keys(DEFAULT_EMAIL_PREFS)) {
+      cleanPrefs[k] = rawPrefs[k] !== undefined ? rawPrefs[k] : DEFAULT_EMAIL_PREFS[k];
     }
     res.json({
       has_credentials: !!settings.google_client_id_enc,
@@ -42,7 +50,8 @@ router.get('/', shopifyAuth, async (req, res) => {
       ai_brand_name: settings.ai_brand_name || req.shop.shop_name || '',
       notification_email: settings.notification_email || req.shop.email || '',
       shop_email: req.shop.email || '',
-      email_prefs: { ...DEFAULT_EMAIL_PREFS, ...(settings.email_prefs || {}) },
+      email_prefs: cleanPrefs,
+      weekly_report_day: settings.weekly_report_day != null ? settings.weekly_report_day : 1,
       default_date_range: settings.default_date_range || '28d',
     });
   } catch (err) {
@@ -57,7 +66,7 @@ router.put('/', shopifyAuth, async (req, res) => {
       google_client_id, google_client_secret, google_ads_developer_token,
       setup_step, setup_completed,
       auto_sitemap_enabled, auto_sitemap_url, brand_keywords, ai_brand_name,
-      notification_email, email_prefs, default_date_range,
+      notification_email, email_prefs, weekly_report_day, default_date_range,
     } = req.body;
 
     const data = {};
@@ -75,7 +84,18 @@ router.put('/', shopifyAuth, async (req, res) => {
     if (brand_keywords !== undefined) data.brand_keywords = brand_keywords || null;
     if (ai_brand_name !== undefined) data.ai_brand_name = ai_brand_name?.trim() || null;
     if (notification_email !== undefined) data.notification_email = notification_email?.trim() || null;
-    if (email_prefs !== undefined) data.email_prefs = email_prefs || null;
+    if (email_prefs !== undefined) {
+      // Whitelist only the keys the merchant is allowed to control; ignore admin-only events
+      const cleaned = {};
+      for (const k of Object.keys(DEFAULT_EMAIL_PREFS)) {
+        if (k in (email_prefs || {})) cleaned[k] = !!email_prefs[k];
+      }
+      data.email_prefs = cleaned;
+    }
+    if (weekly_report_day !== undefined) {
+      const day = parseInt(weekly_report_day, 10);
+      data.weekly_report_day = VALID_WEEKLY_DAYS.includes(day) ? day : 1;
+    }
     if (default_date_range !== undefined) data.default_date_range = default_date_range || '28d';
 
     const existing = await ShopSettings.findOne({ where: { shop_id: req.shop.id } });

@@ -3,17 +3,18 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Frame, Navigation, TopBar } from '@shopify/polaris';
 import {
   HomeIcon, ChartVerticalIcon, SettingsIcon, InfoIcon,
-  ConnectIcon, SearchIcon, MegaphoneIcon,
+  ConnectIcon, SearchIcon, MegaphoneIcon, EmailIcon,
 } from '@shopify/polaris-icons';
 import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
-  { url: '/admin/dashboard', label: 'Dashboard', icon: HomeIcon },
-  { url: '/admin/shops', label: 'Shops / Users', icon: ConnectIcon },
-  { url: '/admin/plans', label: 'Billing Plans', icon: ChartVerticalIcon },
-  { url: '/admin/subscriptions', label: 'Subscriptions', icon: MegaphoneIcon },
-  { url: '/admin/admins', label: 'Admin Users', icon: SearchIcon },
-  { url: '/admin/settings', label: 'Settings', icon: SettingsIcon },
+  { url: '/admin/dashboard',       label: 'Dashboard',        icon: HomeIcon },
+  { url: '/admin/shops',           label: 'Shops / Users',    icon: ConnectIcon },
+  { url: '/admin/plans',           label: 'Billing Plans',    icon: ChartVerticalIcon },
+  { url: '/admin/subscriptions',   label: 'Subscriptions',    icon: MegaphoneIcon },
+  { url: '/admin/admins',          label: 'Admin Users',      icon: SearchIcon },
+  { url: '/admin/email-templates', label: 'Email Templates',  icon: EmailIcon },
+  { url: '/admin/settings',        label: 'Settings',         icon: SettingsIcon },
 ];
 
 export default function AdminLayout() {

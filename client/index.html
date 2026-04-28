@@ -8,37 +8,38 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <script>
-      // One-time cache flush: bump APP_BUILD_ID whenever you need every browser to drop its cache.
+      // One-time cache flush: bump APP_BUILD_ID to drop service workers + Cache Storage
+      // for every browser. NO location.reload() — Shopify partitions sessionStorage
+      // inside iframes, so the "already reloaded" guard never sticks and the page
+      // ends up in an infinite reload loop = blank screen. Letting the current
+      // page proceed is fine because <meta Cache-Control="no-cache"> is set.
       (function(){
-        var APP_BUILD_ID = 'v4-2026-04-27-black-buttons';
+        var APP_BUILD_ID = 'v8-2026-04-28-revert-autocomplete';
         try {
           var stored = localStorage.getItem('app_build_id');
           if (stored !== APP_BUILD_ID) {
-            localStorage.setItem('app_build_id', APP_BUILD_ID);
-            // Unregister any service workers
+            try { localStorage.setItem('app_build_id', APP_BUILD_ID); } catch (e) {}
             if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
-              navigator.serviceWorker.getRegistrations().then(function(regs){
-                regs.forEach(function(r){ r.unregister(); });
-              }).catch(function(){});
+              navigator.serviceWorker.getRegistrations()
+                .then(function(regs){ regs.forEach(function(r){ r.unregister(); }); })
+                .catch(function(){});
             }
-            // Clear all Cache Storage entries
             if (window.caches && caches.keys) {
-              caches.keys().then(function(keys){
-                return Promise.all(keys.map(function(k){ return caches.delete(k); }));
-              }).then(function(){
-                // Force-reload from origin once cleanup is done
-                if (!sessionStorage.getItem('app_build_reloaded')) {
-                  sessionStorage.setItem('app_build_reloaded', '1');
-                  location.reload();
-                }
-              }).catch(function(){});
+              caches.keys()
+                .then(function(keys){ return Promise.all(keys.map(function(k){ return caches.delete(k); })); })
+                .catch(function(){});
             }
-          } else {
-            sessionStorage.removeItem('app_build_reloaded');
           }
         } catch (e) {}
       })();
     </script>
+    <!-- Inter font (matches the Shopify admin chrome around our iframe) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
     <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
     <title>Google Analytics — v4</title>
   </head>
