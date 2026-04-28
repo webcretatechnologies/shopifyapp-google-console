@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { shopifyAuth } = require('../middleware/shopifyAuth');
 const { BillingPlan, Subscription } = require('../models');
+const { syncShopWithPlanLimits } = require('../services/syncOnPlan');
+const { sendSubscriptionActivated } = require('../services/email');
 
 router.get('/plans', async (req, res) => {
   const plans = await BillingPlan.findAll({ where: { is_active: true }, order: [['price', 'ASC']] });
@@ -33,6 +35,13 @@ router.post('/subscribe', shopifyAuth, async (req, res) => {
       trial_ends_at: trialEnd,
       current_period_start: new Date(),
     });
+    // Re-sync products/orders against the new plan's limits — non-blocking
+    syncShopWithPlanLimits(req.shop.id, `plan-change:${plan.slug}`).catch(err =>
+      console.error('[Billing] Plan-change sync error:', err.message)
+    );
+    // Trial-started email
+    sendSubscriptionActivated(req.shop, { status: 'trial', trial_ends_at: trialEnd }, plan)
+      .catch(e => console.error('[Email] subscription-activated failed:', e.message));
     return res.json({ success: true, status: 'trial' });
   }
 
@@ -94,8 +103,21 @@ router.get('/confirm', shopifyAuth, async (req, res) => {
   const { plan_id, charge_id } = req.query;
   const sub = await Subscription.findOne({ where: { shop_id: req.shop.id, plan_id } });
   if (sub) {
+    const wasNotActive = sub.status !== 'active';
     await sub.update({ status: 'active', current_period_start: new Date() });
+    // Activation email — only on the transition into active (not on re-confirmation)
+    if (wasNotActive) {
+      const plan = await BillingPlan.findByPk(plan_id);
+      if (plan) {
+        sendSubscriptionActivated(req.shop, sub, plan)
+          .catch(e => console.error('[Email] subscription-activated failed:', e.message));
+      }
+    }
   }
+  // Paid plan just activated — re-sync against the new (higher) plan's limits
+  syncShopWithPlanLimits(req.shop.id, `plan-confirm:${plan_id}`).catch(err =>
+    console.error('[Billing] Confirm sync error:', err.message)
+  );
   res.redirect(`${process.env.APP_URL}?billing=success&shop=${req.shop.shop_domain}`);
 });
 

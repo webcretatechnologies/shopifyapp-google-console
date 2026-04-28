@@ -1,75 +1,43 @@
 import React from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Frame, Navigation } from '@shopify/polaris';
-import {
-  HomeIcon, ChartVerticalIcon, SearchIcon, MegaphoneIcon, ConnectIcon,
-  SettingsIcon, InfoIcon, ProductIcon, AlertCircleIcon, QuestionCircleIcon,
-  GlobeAsiaIcon,
-} from '@shopify/polaris-icons';
+import { Outlet } from 'react-router-dom';
+import { NavMenu } from '@shopify/app-bridge-react';
 import { useShop } from '../../context/ShopContext';
 
-const globalStyle = `
-  /* Make app nav sidebar same background as content — avoids conflict with Shopify's own sidebar */
-  .Polaris-Frame__Navigation,
-  .Polaris-Navigation {
-    background-color: #f6f6f7 !important;
-    border-right: 1px solid #e1e3e5 !important;
-  }
-  .Polaris-Navigation__Item:hover {
-    background-color: #edeeef !important;
-  }
-  .Polaris-Frame {
-    background-color: #f6f6f7 !important;
-  }
-`;
-
 export default function AppLayout() {
-  const navigate = useNavigate();
-  const location = useLocation();
   const { googleStatus } = useShop();
-
-  // Preserve ?shop=&host= query string on all navigation so App Bridge stays initialized
   const qs = window.location.search;
-  const navItem = (url, label, icon, extra = {}) => ({
-    label,
-    icon,
-    selected: location.pathname === url,
-    onClick: () => navigate(url + qs),
-    ...extra,
-  });
-
-  const nav = (
-    <Navigation location={location.pathname}>
-      <Navigation.Section items={[
-        navItem('/', 'Dashboard', HomeIcon),
-        navItem('/products', 'Products', ProductIcon),
-        navItem('/insights', 'Insights', AlertCircleIcon),
-        navItem('/seo', 'SEO', SearchIcon),
-        navItem('/sitemap', 'Sitemap Manager', GlobeAsiaIcon),
-        navItem('/analytics', 'Analytics', ChartVerticalIcon),
-        navItem('/ads', 'Google Ads', MegaphoneIcon),
-        navItem('/connect-google', 'Connect Google', ConnectIcon,
-          { badge: !googleStatus?.connected ? '!' : undefined }),
-      ]} />
-      <Navigation.Section
-        title="Setup & Help"
-        items={[
-          navItem('/settings',    'API Settings',  SettingsIcon),
-          navItem('/setup-guide', 'Google Setup',  InfoIcon),
-          navItem('/help',        'Help & Guide',  QuestionCircleIcon),
-        ]}
-      />
-    </Navigation>
-  );
 
   return (
     <>
-      <style>{globalStyle}</style>
-      <Frame navigation={nav}>
-        <div style={{ padding: '20px' }}>
-          <Outlet />
-        </div>
-      </Frame>
+      <NavMenu>
+        <a href={`/${qs}`} rel="home">Dashboard</a>
+        <a href={`/products${qs}`}>Products</a>
+        <a href={`/insights${qs}`}>Insights</a>
+        <a href={`/seo${qs}`}>SEO</a>
+        <a href={`/site-audit${qs}`}>Site Audit</a>
+        <a href={`/ai-visibility${qs}`}>AI Visibility</a>
+        <a href={`/sitemap${qs}`}>Sitemap Manager</a>
+        <a href={`/analytics${qs}`}>Analytics</a>
+        <a href={`/ads${qs}`}>Google Ads</a>
+        <a href={`/connect-google${qs}`}>
+          {googleStatus?.connected ? 'Connect Google' : 'Connect Google ⚠'}
+        </a>
+        <a href={`/settings${qs}`}>API Settings</a>
+        <a href={`/setup-guide${qs}`}>Google Setup</a>
+        <a href={`/billing${qs}`}>Plan &amp; Billing</a>
+        <a href={`/help${qs}`}>Help &amp; Guide</a>
+      </NavMenu>
+      <div style={{ padding: '20px' }}>
+        <Outlet />
+      </div>
+      <div style={{
+        position: 'fixed', bottom: 8, right: 8, zIndex: 9999,
+        background: '#1a1a1a', color: '#fff', padding: '4px 10px',
+        borderRadius: 6, fontSize: 11, fontFamily: 'monospace',
+        opacity: 0.85, pointerEvents: 'none',
+      }}>
+        build v4
+      </div>
     </>
   );
 }

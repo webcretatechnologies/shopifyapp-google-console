@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery } from 'react-query';
+import { useNavigate } from 'react-router-dom';
 import {
-  Page, Card, Text, Banner, Button, BlockStack, InlineStack,
+  Page, Card, Text, Banner, Button, ButtonGroup, BlockStack, InlineStack,
   Box, Tabs, Spinner, Divider, Badge,
 } from '@shopify/polaris';
 import {
@@ -12,6 +13,7 @@ import { analyticsApi } from '../api';
 import { useShop } from '../context/ShopContext';
 import { usePlan, downloadCSV } from '../hooks/usePlan';
 import PlanGate from '../components/PlanGate';
+import DateRangeFilter from '../components/DateRangeFilter';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,23 +39,17 @@ function fmtDate(d) {
 
 function PeriodSelector({ value, onChange }) {
   return (
-    <InlineStack gap="100">
+    <ButtonGroup variant="segmented">
       {PERIODS.map(p => (
-        <button
+        <Button
           key={p.value}
+          pressed={value === p.value}
           onClick={() => onChange(p.value)}
-          style={{
-            padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
-            fontSize: 13, fontWeight: 500,
-            background: value === p.value ? '#5c6ac4' : '#f1f2f3',
-            color: value === p.value ? '#fff' : '#202223',
-            transition: 'all 0.15s',
-          }}
         >
           {p.label}
-        </button>
+        </Button>
       ))}
-    </InlineStack>
+    </ButtonGroup>
   );
 }
 
@@ -132,11 +128,11 @@ function LoadingBox() {
 }
 
 const CHART_COLORS = {
-  sessions: '#5c6ac4',
+  sessions: '#1a1a1a',
   users: '#50b83c',
   new_users: '#47c1bf',
-  clicks: '#5c6ac4',
-  impressions: '#9b59b6',
+  clicks: '#1a1a1a',
+  impressions: '#303030',
   spend: '#e67e22',
 };
 
@@ -171,11 +167,11 @@ function GA4Tab({ period }) {
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
-        <KPICard label="Total Sessions"     value={lS ? '—' : fmt(totals.sessions)} color="#5c6ac4" />
+        <KPICard label="Total Sessions"     value={lS ? '—' : fmt(totals.sessions)} color="#1a1a1a" />
         <KPICard label="Total Users"        value={lS ? '—' : fmt(totals.users)}    color="#50b83c" />
         <KPICard label="New Users"          value={lS ? '—' : fmt(totals.new_users)}color="#47c1bf" />
         <KPICard label="Avg Bounce Rate"    value={lS ? '—' : fmtPct(avgBounce)}    color="#e67e22" />
-        <KPICard label="Avg Session Duration" value={lS ? '—' : fmtSec(avgDur)}     color="#9b59b6" />
+        <KPICard label="Avg Session Duration" value={lS ? '—' : fmtSec(avgDur)}     color="#303030" />
       </div>
 
       {/* Sessions + Users chart */}
@@ -189,8 +185,8 @@ function GA4Tab({ period }) {
                   <AreaChart data={chartData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gSess" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#5c6ac4" stopOpacity={0.18} />
-                        <stop offset="95%" stopColor="#5c6ac4" stopOpacity={0} />
+                        <stop offset="5%" stopColor="#1a1a1a" stopOpacity={0.18} />
+                        <stop offset="95%" stopColor="#1a1a1a" stopOpacity={0} />
                       </linearGradient>
                       <linearGradient id="gUsers" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#50b83c" stopOpacity={0.18} />
@@ -202,7 +198,7 @@ function GA4Tab({ period }) {
                     <YAxis tick={{ fontSize: 11, fill: '#6d7175' }} width={45} />
                     <Tooltip formatter={(v, n) => [fmt(v), n]} />
                     <Legend />
-                    <Area type="monotone" dataKey="sessions" stroke="#5c6ac4" fill="url(#gSess)" strokeWidth={2} dot={false} name="Sessions" />
+                    <Area type="monotone" dataKey="sessions" stroke="#1a1a1a" fill="url(#gSess)" strokeWidth={2} dot={false} name="Sessions" />
                     <Area type="monotone" dataKey="users"    stroke="#50b83c" fill="url(#gUsers)" strokeWidth={2} dot={false} name="Users" />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -229,7 +225,7 @@ function GA4Tab({ period }) {
                         <XAxis type="number" tick={{ fontSize: 11 }} />
                         <YAxis type="category" dataKey="channel" width={110} tick={{ fontSize: 11, fill: '#202223' }} />
                         <Tooltip formatter={(v) => [fmt(v), 'Sessions']} />
-                        <Bar dataKey="sessions" fill="#5c6ac4" radius={[0, 4, 4, 0]} name="Sessions" />
+                        <Bar dataKey="sessions" fill="#1a1a1a" radius={[0, 4, 4, 0]} name="Sessions" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -351,8 +347,8 @@ function SearchConsoleTab({ period }) {
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-        <KPICard label="Total Clicks"      value={lO ? '—' : fmt(totals.clicks)}      color="#5c6ac4" sub="organic search" />
-        <KPICard label="Total Impressions" value={lO ? '—' : fmt(totals.impressions)} color="#9b59b6" sub="search results shown" />
+        <KPICard label="Total Clicks"      value={lO ? '—' : fmt(totals.clicks)}      color="#1a1a1a" sub="organic search" />
+        <KPICard label="Total Impressions" value={lO ? '—' : fmt(totals.impressions)} color="#303030" sub="search results shown" />
         <KPICard label="Avg CTR"           value={lO ? '—' : fmtPct(avgCtr)}          color="#50b83c" sub="click-through rate" />
         <KPICard label="Avg Position"      value={lO ? '—' : `#${avgPos.toFixed(1)}`} color="#e67e22" sub="search ranking" />
       </div>
@@ -368,12 +364,12 @@ function SearchConsoleTab({ period }) {
                   <AreaChart data={chartData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gClicks" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#5c6ac4" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#5c6ac4" stopOpacity={0} />
+                        <stop offset="5%" stopColor="#1a1a1a" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#1a1a1a" stopOpacity={0} />
                       </linearGradient>
                       <linearGradient id="gImpr" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#9b59b6" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#9b59b6" stopOpacity={0} />
+                        <stop offset="5%" stopColor="#303030" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#303030" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" />
@@ -382,8 +378,8 @@ function SearchConsoleTab({ period }) {
                     <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#6d7175' }} width={65} />
                     <Tooltip formatter={(v, n) => [fmt(v), n]} />
                     <Legend />
-                    <Area yAxisId="left"  type="monotone" dataKey="clicks"      stroke="#5c6ac4" fill="url(#gClicks)" strokeWidth={2} dot={false} name="Clicks" />
-                    <Area yAxisId="right" type="monotone" dataKey="impressions" stroke="#9b59b6" fill="url(#gImpr)"  strokeWidth={2} dot={false} name="Impressions" />
+                    <Area yAxisId="left"  type="monotone" dataKey="clicks"      stroke="#1a1a1a" fill="url(#gClicks)" strokeWidth={2} dot={false} name="Clicks" />
+                    <Area yAxisId="right" type="monotone" dataKey="impressions" stroke="#303030" fill="url(#gImpr)"  strokeWidth={2} dot={false} name="Impressions" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -438,35 +434,22 @@ function SearchConsoleTab({ period }) {
 
       {/* Queries / Pages tabs */}
       <Card padding="0">
-        <Box padding="400" borderBlockEndWidth="025" borderColor="border">
-          <InlineStack align="space-between" blockAlign="center">
-            <InlineStack gap="0">
-              {scTabs.map((t, i) => (
-                <button
-                  key={t.id}
-                  onClick={() => setScTab(i)}
-                  style={{
-                    padding: '8px 20px', border: 'none', cursor: 'pointer', fontSize: 13,
-                    fontWeight: scTab === i ? 600 : 400,
-                    background: 'transparent',
-                    color: scTab === i ? '#5c6ac4' : '#6d7175',
-                    borderBottom: scTab === i ? '2px solid #5c6ac4' : '2px solid transparent',
-                  }}
-                >
-                  {t.content}
-                  <span style={{ marginLeft: 6, fontSize: 11, color: '#6d7175' }}>
-                    ({t.id === 'queries' ? queries.length : scPages.length})
-                  </span>
-                </button>
-              ))}
+        <Tabs
+          tabs={[
+            { id: 'queries', content: `Queries (${queries.length})` },
+            { id: 'pages',   content: `Pages (${scPages.length})` },
+          ]}
+          selected={scTab}
+          onSelect={setScTab}
+        >
+          <Box padding="400" borderBlockEndWidth="025" borderColor="border">
+            <InlineStack align="end">
+              <Button onClick={scTab === 0 ? exportQueries : exportPages}>Export CSV</Button>
             </InlineStack>
-            <Button size="slim" onClick={scTab === 0 ? exportQueries : exportPages}>
-              Export CSV
-            </Button>
-          </InlineStack>
-        </Box>
-        {scTab === 0 && (lQ ? <LoadingBox /> : <DataTable columns={queryCols} rows={queries} emptyText="No query data. Configure Search Console property first." />)}
-        {scTab === 1 && (lP ? <LoadingBox /> : <DataTable columns={pageCols}  rows={scPages} emptyText="No page data available." />)}
+          </Box>
+          {scTab === 0 && (lQ ? <LoadingBox /> : <DataTable columns={queryCols} rows={queries} emptyText="No query data. Configure Search Console property first." />)}
+          {scTab === 1 && (lP ? <LoadingBox /> : <DataTable columns={pageCols}  rows={scPages} emptyText="No page data available." />)}
+        </Tabs>
       </Card>
 
     </BlockStack>
@@ -490,8 +473,8 @@ function AdsTab({ period }) {
   return (
     <BlockStack gap="500">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-        <KPICard label="Total Clicks"       value={isLoading ? '—' : fmt(totals.clicks)}                          color="#5c6ac4" />
-        <KPICard label="Total Impressions"  value={isLoading ? '—' : fmt(totals.impressions)}                     color="#9b59b6" />
+        <KPICard label="Total Clicks"       value={isLoading ? '—' : fmt(totals.clicks)}                          color="#1a1a1a" />
+        <KPICard label="Total Impressions"  value={isLoading ? '—' : fmt(totals.impressions)}                     color="#303030" />
         <KPICard label="Total Spend"        value={isLoading ? '—' : `₹${(totals.cost || 0).toFixed(2)}`}         color="#e67e22" />
         <KPICard label="Total Conversions"  value={isLoading ? '—' : fmt(totals.conversions)}                     color="#50b83c" />
       </div>
@@ -548,6 +531,7 @@ function AdsTab({ period }) {
 // ── Starter overview (basic KPIs only) ────────────────────────────────────────
 
 function StarterOverview() {
+  const navigate = useNavigate();
   const { data: overview } = useQuery('overview', analyticsApi.overview);
   const totals = overview?.totals || {};
   const keywords = overview?.top_keywords || [];
@@ -555,15 +539,15 @@ function StarterOverview() {
   return (
     <BlockStack gap="400">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-        <KPICard label="Total Sessions (30d)"   value={fmt(totals.sessions)}  color="#5c6ac4" />
+        <KPICard label="Total Sessions (30d)"   value={fmt(totals.sessions)}  color="#1a1a1a" />
         <KPICard label="Total Users (30d)"      value={fmt(totals.users)}     color="#50b83c" />
-        <KPICard label="Ranked Keywords"        value={keywords.length}       color="#9b59b6" />
+        <KPICard label="Ranked Keywords"        value={keywords.length}       color="#303030" />
       </div>
 
       <Banner
         title="Upgrade for full Analytics & Search Console reports"
         tone="info"
-        action={{ content: 'View Plans', url: '/billing' }}
+        action={{ content: 'View Plans', onAction: () => navigate('/billing' + window.location.search) }}
       >
         <Text variant="bodySm">
           Growth plan unlocks: GA4 sessions/users charts, traffic sources, top countries, top pages,
@@ -628,45 +612,36 @@ export default function Dashboard() {
           <StarterOverview />
         ) : (
           <>
-            {/* Period selector */}
-            <Card>
-              <Box padding="300">
-                <InlineStack align="space-between" blockAlign="center">
-                  <Text variant="bodyMd" fontWeight="semibold">Date Range</Text>
-                  <PeriodSelector value={period} onChange={p => { setPeriod(p); }} />
-                </InlineStack>
-              </Box>
-            </Card>
+            {/* Top filter bar — minimal Shopify-admin style: just the date button, no card wrapper */}
+            <InlineStack gap="200">
+              <DateRangeFilter
+                value={(() => {
+                  const end = new Date(); end.setHours(0,0,0,0);
+                  const start = new Date(end);
+                  const days = period === '7d' ? 7 : period === '28d' ? 28 : period === '90d' ? 90 : 28;
+                  start.setDate(end.getDate() - days);
+                  return { start, end };
+                })()}
+                onChange={({ presetId }) => {
+                  const map = { last7: '7d', last30: '28d', last90: '90d' };
+                  setPeriod(map[presetId] || '28d');
+                }}
+                presets={['today','last7','last30','last60','last90','last360']}
+              />
+            </InlineStack>
 
             {/* Main tab navigation */}
-            <div style={{ borderBottom: '1px solid #e1e3e5' }}>
-              <InlineStack gap="0">
-                {MAIN_TABS.map((t, i) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setMainTab(i)}
-                    style={{
-                      padding: '12px 24px', border: 'none', cursor: 'pointer', fontSize: 14,
-                      fontWeight: mainTab === i ? 600 : 400,
-                      background: 'transparent',
-                      color: mainTab === i ? '#5c6ac4' : '#6d7175',
-                      borderBottom: mainTab === i ? '2px solid #5c6ac4' : '2px solid transparent',
-                    }}
-                  >
-                    {t.content}
-                  </button>
-                ))}
-              </InlineStack>
-            </div>
-
-            {/* Tab content */}
-            {mainTab === 0 && <GA4Tab period={period} />}
-            {mainTab === 1 && <SearchConsoleTab period={period} />}
-            {mainTab === 2 && (
-              <PlanGate feature="googleAds" required="growth">
-                <AdsTab period={period} />
-              </PlanGate>
-            )}
+            <Tabs tabs={MAIN_TABS} selected={mainTab} onSelect={setMainTab}>
+              <Box paddingBlockStart="400">
+                {mainTab === 0 && <GA4Tab period={period} />}
+                {mainTab === 1 && <SearchConsoleTab period={period} />}
+                {mainTab === 2 && (
+                  <PlanGate feature="googleAds" required="growth">
+                    <AdsTab period={period} />
+                  </PlanGate>
+                )}
+              </Box>
+            </Tabs>
           </>
         )}
 

@@ -9,11 +9,11 @@ import { adminApi } from '../../api';
 
 function StatCard({ label, value, tone = 'base', description }) {
   const toneColors = {
-    base: { bg: '#f6f6f7', text: '#202223', accent: '#5c6ac4' },
+    base: { bg: '#f6f6f7', text: '#202223', accent: '#1a1a1a' },
     success: { bg: '#f1f8f5', text: '#108043', accent: '#108043' },
     warning: { bg: '#fef9ed', text: '#8a6116', accent: '#f49342' },
     info: { bg: '#f4f6f8', text: '#0870d9', accent: '#0870d9' },
-    purple: { bg: '#f5f0ff', text: '#6c2eb9', accent: '#9c6ade' },
+    purple: { bg: '#f5f0ff', text: '#1a1a1a', accent: '#404040' },
   };
   const colors = toneColors[tone] || toneColors.base;
 

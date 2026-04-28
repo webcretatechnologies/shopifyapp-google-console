@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { InlineStack, Button, Text, Box } from '@shopify/polaris';
+import { InlineStack, Text } from '@shopify/polaris';
 
 const PRESETS = [
   { label: '7 Days',  value: '7d' },
@@ -14,6 +14,42 @@ function offsetDate(days) {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return toDateStr(d);
+}
+
+const segBtnBase = {
+  border: 'none',
+  borderRadius: 8,
+  padding: '6px 14px',
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  lineHeight: 1.4,
+  transition: 'background 120ms ease, color 120ms ease',
+};
+const segBtnSelected = {
+  ...segBtnBase,
+  background: '#1a1a1a',
+  color: '#ffffff',
+  boxShadow: '0 0 0 1px #1a1a1a inset',
+};
+const segBtnUnselected = {
+  ...segBtnBase,
+  background: '#ffffff',
+  color: '#303030',
+  boxShadow: '0 0 0 1px #cccccc inset, 0 -1px 0 0 #b5b5b5 inset',
+};
+
+function SegButton({ selected, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={selected ? segBtnSelected : segBtnUnselected}
+    >
+      {children}
+    </button>
+  );
 }
 
 /**
@@ -38,28 +74,23 @@ export default function DateRangePicker({ period, startDate, endDate, onChange }
 
   return (
     <InlineStack gap="200" blockAlign="center" wrap={false}>
-      {/* Preset buttons */}
       {PRESETS.map(p => (
-        <Button
+        <SegButton
           key={p.value}
-          size="slim"
-          variant={period === p.value ? 'primary' : 'secondary'}
+          selected={period === p.value}
           onClick={() => selectPreset(p.value)}
         >
           {p.label}
-        </Button>
+        </SegButton>
       ))}
 
-      {/* Custom toggle */}
-      <Button
-        size="slim"
-        variant={period === 'custom' ? 'primary' : 'secondary'}
+      <SegButton
+        selected={period === 'custom'}
         onClick={() => { setShowCustom(v => !v); }}
       >
         Custom Range
-      </Button>
+      </SegButton>
 
-      {/* Date inputs — shown when custom is open */}
       {showCustom && (
         <InlineStack gap="200" blockAlign="center">
           <input
@@ -84,13 +115,10 @@ export default function DateRangePicker({ period, startDate, endDate, onChange }
               fontSize: 13, color: '#202223', background: '#fff', cursor: 'pointer',
             }}
           />
-          <Button size="slim" variant="primary" onClick={applyCustom}>
-            Apply
-          </Button>
+          <SegButton selected onClick={applyCustom}>Apply</SegButton>
         </InlineStack>
       )}
 
-      {/* Show active custom range label */}
       {period === 'custom' && !showCustom && (
         <Text variant="bodySm" tone="subdued">
           {startDate} → {endDate}

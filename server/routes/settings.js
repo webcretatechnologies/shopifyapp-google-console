@@ -4,11 +4,29 @@ const { ShopSettings } = require('../models');
 const { encrypt, decrypt } = require('../services/encryption');
 const { shopifyAuth } = require('../middleware/shopifyAuth');
 
+// Default opt-in for every event type — used when shop has no email_prefs row yet
+const DEFAULT_EMAIL_PREFS = {
+  welcome:         true,
+  googleConnected: true,
+  subscription:    true,
+  audit:           true,
+  aiVisibility:    true,
+  stockAlerts:     true,
+  weeklyReport:    true,
+};
+
 router.get('/', shopifyAuth, async (req, res) => {
   try {
     const settings = await ShopSettings.findOne({ where: { shop_id: req.shop.id } });
     if (!settings) {
-      return res.json({ has_credentials: false, setup_step: 1, setup_completed: false, auto_sitemap_enabled: false, auto_sitemap_url: null, brand_keywords: '' });
+      return res.json({
+        has_credentials: false, setup_step: 1, setup_completed: false,
+        auto_sitemap_enabled: false, auto_sitemap_url: null, brand_keywords: '',
+        notification_email: req.shop.email || '',
+        shop_email: req.shop.email || '',
+        email_prefs: DEFAULT_EMAIL_PREFS,
+        default_date_range: '28d',
+      });
     }
     res.json({
       has_credentials: !!settings.google_client_id_enc,
@@ -21,6 +39,11 @@ router.get('/', shopifyAuth, async (req, res) => {
       auto_sitemap_enabled: !!settings.auto_sitemap_enabled,
       auto_sitemap_url: settings.auto_sitemap_url || '',
       brand_keywords: settings.brand_keywords || '',
+      ai_brand_name: settings.ai_brand_name || req.shop.shop_name || '',
+      notification_email: settings.notification_email || req.shop.email || '',
+      shop_email: req.shop.email || '',
+      email_prefs: { ...DEFAULT_EMAIL_PREFS, ...(settings.email_prefs || {}) },
+      default_date_range: settings.default_date_range || '28d',
     });
   } catch (err) {
     console.error('Settings GET error:', err);
@@ -33,7 +56,8 @@ router.put('/', shopifyAuth, async (req, res) => {
     const {
       google_client_id, google_client_secret, google_ads_developer_token,
       setup_step, setup_completed,
-      auto_sitemap_enabled, auto_sitemap_url, brand_keywords,
+      auto_sitemap_enabled, auto_sitemap_url, brand_keywords, ai_brand_name,
+      notification_email, email_prefs, default_date_range,
     } = req.body;
 
     const data = {};
@@ -49,6 +73,10 @@ router.put('/', shopifyAuth, async (req, res) => {
     if (auto_sitemap_enabled !== undefined) data.auto_sitemap_enabled = !!auto_sitemap_enabled;
     if (auto_sitemap_url !== undefined) data.auto_sitemap_url = auto_sitemap_url || null;
     if (brand_keywords !== undefined) data.brand_keywords = brand_keywords || null;
+    if (ai_brand_name !== undefined) data.ai_brand_name = ai_brand_name?.trim() || null;
+    if (notification_email !== undefined) data.notification_email = notification_email?.trim() || null;
+    if (email_prefs !== undefined) data.email_prefs = email_prefs || null;
+    if (default_date_range !== undefined) data.default_date_range = default_date_range || '28d';
 
     const existing = await ShopSettings.findOne({ where: { shop_id: req.shop.id } });
     if (existing) {

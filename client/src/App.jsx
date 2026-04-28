@@ -19,6 +19,8 @@ import Products from './pages/Products';
 import Insights from './pages/Insights';
 import Help from './pages/Help';
 import SitemapPage from './pages/SitemapPage';
+import SiteAudit from './pages/SiteAudit';
+import AIVisibility from './pages/AIVisibility';
 import AppLayout from './components/Layout/AppLayout';
 
 // Admin pages
@@ -48,13 +50,12 @@ export default function App() {
           <AuthProvider>
             <ShopProvider>
               <Routes>
-                {/* Billing — outside AppLayout so it shows without nav */}
-                <Route path="/billing" element={<Billing />} />
-
                 {/* Shopify embedded app */}
                 <Route path="/" element={<AppLayout />}>
                   <Route index element={<Dashboard />} />
                   <Route path="seo" element={<SEOPage />} />
+                  <Route path="site-audit" element={<SiteAudit />} />
+                  <Route path="ai-visibility" element={<AIVisibility />} />
                   <Route path="sitemap" element={<SitemapPage />} />
                   <Route path="analytics" element={<AnalyticsPage />} />
                   <Route path="ads" element={<AdsPage />} />
@@ -64,6 +65,7 @@ export default function App() {
                   <Route path="settings" element={<ShopSettings />} />
                   <Route path="setup-guide" element={<SetupGuide />} />
                   <Route path="help" element={<Help />} />
+                  <Route path="billing" element={<Billing />} />
                 </Route>
 
                 {/* Super Admin Panel */}

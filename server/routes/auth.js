@@ -3,6 +3,7 @@ const router = express.Router();
 const crypto = require('crypto');
 const axios = require('axios');
 const { Shop } = require('../models');
+const { sendWelcome } = require('../services/email');
 
 const API_KEY = process.env.SHOPIFY_API_KEY;
 const API_SECRET = process.env.SHOPIFY_API_SECRET;
@@ -92,6 +93,8 @@ router.get('/callback', async (req, res) => {
         installed_at: new Date(),
       });
       console.log('[OAuth Callback] Shop created in DB, id:', shopRecord.id);
+      // Welcome email — fire and forget, never blocks install
+      sendWelcome(shopRecord).catch(e => console.error('[Email] welcome failed:', e.message));
     } else {
       await shopRecord.update({ access_token, scope, is_active: true, uninstalled_at: null });
       console.log('[OAuth Callback] Existing shop re-activated in DB');
@@ -122,6 +125,10 @@ router.get('/callback', async (req, res) => {
         }
       }
     }
+
+    // No auto-subscription on install — ShopContext routes the merchant to /billing
+    // to pick a plan. Initial product/order sync is triggered from billing.js after
+    // the merchant subscribes, so it always respects their chosen plan's limits.
 
     const redirectUrl = `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}`;
     console.log('[OAuth Callback] SUCCESS — redirecting into Shopify app:', redirectUrl);

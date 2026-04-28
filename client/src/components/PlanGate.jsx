@@ -6,7 +6,7 @@ import { usePlan } from '../hooks/usePlan';
 const PLAN_ORDER = { starter: 0, growth: 1, pro: 2 };
 
 const PLAN_COLOR = {
-  growth: { bg: '#f4f5fa', border: '#5c6ac4', badge: '#5c6ac4', label: 'Growth Plan' },
+  growth: { bg: '#f4f5fa', border: '#1a1a1a', badge: '#1a1a1a', label: 'Growth Plan' },
   pro:    { bg: '#fef7f0', border: '#f49342', badge: '#f49342', label: 'Pro Plan' },
 };
 

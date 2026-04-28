@@ -113,6 +113,34 @@ export const adminApi = {
   admins: () => api.get('/admin/admins'),
   createAdmin: (data) => api.post('/admin/admins', data),
   updateAdmin: (id, data) => api.patch(`/admin/admins/${id}`, data),
+  config: () => api.get('/admin/config'),
+  saveConfig: (patch) => api.put('/admin/config', { patch }),
+};
+
+// AI Visibility API
+export const aiVisibilityApi = {
+  settings:        () => api.get('/ai-visibility/settings'),
+  saveSettings:    (data) => api.put('/ai-visibility/settings', data),
+  latest:          () => api.get('/ai-visibility/latest'),
+  history:         () => api.get('/ai-visibility/history'),
+  results:         (id) => api.get(`/ai-visibility/runs/${id}/results`),
+  defaultPrompts:  () => api.get('/ai-visibility/default-prompts'),
+  run:             (data) => api.post('/ai-visibility/run', data || {}),
+};
+
+// Site Audit API
+export const auditApi = {
+  latest:      () => api.get('/audit/latest'),
+  history:     () => api.get('/audit/history'),
+  storefront:  () => api.get('/audit/storefront'),
+  setStorefrontPassword: (password) => api.put('/audit/storefront-password', { password }),
+  get:         (id) => api.get(`/audit/${id}`),
+  issues:      (id, params) => api.get(`/audit/${id}/issues`, { params }),
+  summary:     (id) => api.get(`/audit/${id}/summary`),
+  pages:       (id, params) => api.get(`/audit/${id}/pages`, { params }),
+  stats:       (id) => api.get(`/audit/${id}/stats`),
+  run:         (data) => api.post('/audit/run', data || {}),
+  issueTypes:  () => api.get('/audit/issue-types'),
 };
 
 export default api;

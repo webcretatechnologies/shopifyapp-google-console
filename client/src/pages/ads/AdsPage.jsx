@@ -8,12 +8,13 @@ import { analyticsApi } from '../../api';
 import { useShop } from '../../context/ShopContext';
 import { usePlan, downloadCSV } from '../../hooks/usePlan';
 import PlanGate from '../../components/PlanGate';
+import DateRangeFilter from '../../components/DateRangeFilter';
 
 const fmt     = n => (n||0).toLocaleString();
 const fmtPct  = n => `${parseFloat(n||0).toFixed(2)}%`;
 const fmtMoney = n => `₹${(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-function KPICard({ label, value, color='#5c6ac4', sub }) {
+function KPICard({ label, value, color='#1a1a1a', sub }) {
   return (
     <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', padding:'20px 24px', flex:1, minWidth:140 }}>
       <div style={{ fontSize:11, color:'#6d7175', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:8 }}>{label}</div>
@@ -56,9 +57,7 @@ function Card2({ title, action, children }) {
 }
 
 function PBtn({ label, active, onClick }) {
-  return (
-    <button onClick={onClick} style={{ padding:'6px 14px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:500, background:active?'#5c6ac4':'#f1f2f3', color:active?'#fff':'#202223' }}>{label}</button>
-  );
+  return <Button pressed={active} onClick={onClick}>{label}</Button>;
 }
 
 function getRange(preset) {
@@ -138,24 +137,20 @@ export default function AdsPage() {
         <div style={{ fontSize:13, color:'#6d7175' }}>Campaign performance, spend and conversions</div>
       </div>
 
-      {/* Date bar */}
-      <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', padding:'12px 20px', marginBottom:20 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            {[['7d','7 Days'],['30d','30 Days'],['90d','90 Days']].map(([v,l])=>(
-              <PBtn key={v} label={l} active={!showCust&&preset===v} onClick={()=>{ setPreset(v); setShowCust(false); }}/>
-            ))}
-            <PBtn label="Custom Range" active={showCust} onClick={()=>setShowCust(s=>!s)}/>
-          </div>
-          <span style={{ fontSize:12, color:'#6d7175' }}>{range.startDate} → {range.endDate}</span>
-        </div>
-        {showCust && (
-          <div style={{ marginTop:12, display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-            <input type="date" value={customS} onChange={e=>setCustomS(e.target.value)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid #c4cdd5', fontSize:13 }}/>
-            <span style={{ color:'#6d7175' }}>to</span>
-            <input type="date" value={customE} onChange={e=>setCustomE(e.target.value)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid #c4cdd5', fontSize:13 }}/>
-          </div>
-        )}
+      {/* Date range filter — Shopify admin style */}
+      <div style={{ marginBottom: 20 }}>
+        <DateRangeFilter
+          value={{ start: range.startDate, end: range.endDate }}
+          onChange={({ presetId, startIso, endIso }) => {
+            const map = { last7: '7d', last30: '30d', last90: '90d' };
+            if (map[presetId]) {
+              setPreset(map[presetId]); setShowCust(false); setCustomS(''); setCustomE('');
+            } else {
+              setShowCust(true); setCustomS(startIso); setCustomE(endIso);
+            }
+          }}
+          presets={['today','last7','last30','last60','last90','last360']}
+        />
       </div>
 
       {/* Setup required banner */}
@@ -180,12 +175,12 @@ export default function AdsPage() {
 
       {/* KPI cards */}
       <div style={{ display:'flex', gap:14, marginBottom:20, flexWrap:'wrap' }}>
-        <KPICard label="Total Clicks"      value={isLoading?'…':fmt(tot.clicks)}             color="#5c6ac4" />
-        <KPICard label="Total Impressions" value={isLoading?'…':fmt(tot.impressions)}         color="#9b59b6" />
+        <KPICard label="Total Clicks"      value={isLoading?'…':fmt(tot.clicks)}             color="#1a1a1a" />
+        <KPICard label="Total Impressions" value={isLoading?'…':fmt(tot.impressions)}         color="#303030" />
         <KPICard label="Avg. CTR"          value={isLoading?'…':fmtPct(avgCtr)}              color="#50b83c" />
         <KPICard label="Total Spend"       value={isLoading?'…':fmtMoney(tot.cost)}           color="#f49342" />
         <KPICard label="Conversions"       value={isLoading?'…':fmt(tot.conversions)}         color="#47c1bf" />
-        <KPICard label="ROAS"              value={isLoading?'…':avgRoas?`${avgRoas.toFixed(2)}x`:'—'} color="#5c6ac4" sub="return on ad spend" />
+        <KPICard label="ROAS"              value={isLoading?'…':avgRoas?`${avgRoas.toFixed(2)}x`:'—'} color="#1a1a1a" sub="return on ad spend" />
       </div>
 
       {/* Campaigns table */}
@@ -246,8 +241,8 @@ export default function AdsPage() {
                     <YAxis yAxisId="r" orientation="right" tick={{ fontSize:11 }} width={70} tickFormatter={v=>`${(v/1000).toFixed(0)}K`} />
                     <Tooltip content={<CustomTip />} />
                     <Legend wrapperStyle={{ paddingTop:20 }} />
-                    <Bar yAxisId="l" dataKey="clicks"      name="Clicks"      fill="#5c6ac4" radius={[4,4,0,0]} />
-                    <Bar yAxisId="r" dataKey="impressions" name="Impressions"  fill="#9b59b6" radius={[4,4,0,0]} />
+                    <Bar yAxisId="l" dataKey="clicks"      name="Clicks"      fill="#1a1a1a" radius={[4,4,0,0]} />
+                    <Bar yAxisId="r" dataKey="impressions" name="Impressions"  fill="#303030" radius={[4,4,0,0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -266,7 +261,7 @@ export default function AdsPage() {
             Campaign metrics including clicks, impressions, spend, conversions, and ROAS will display once configured.
           </div>
           <div style={{ marginTop:16 }}>
-            <a href="/connect-google" style={{ display:'inline-block', padding:'8px 20px', background:'#5c6ac4', color:'#fff', borderRadius:8, fontSize:13, fontWeight:600, textDecoration:'none' }}>
+            <a href="/connect-google" style={{ display:'inline-block', padding:'8px 20px', background:'#1a1a1a', color:'#fff', borderRadius:8, fontSize:13, fontWeight:600, textDecoration:'none' }}>
               Configure Google Setup →
             </a>
           </div>

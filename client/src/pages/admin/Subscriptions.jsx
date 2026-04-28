@@ -126,8 +126,8 @@ export default function AdminSubscriptions() {
                       display: 'inline-block', padding: '2px 10px', borderRadius: 20,
                       fontSize: 12, fontWeight: 600,
                       background: sub.plan?.slug === 'pro' ? '#fef7f0' : sub.plan?.slug === 'growth' ? '#f4f5fa' : '#f6f6f7',
-                      color: sub.plan?.slug === 'pro' ? '#f49342' : sub.plan?.slug === 'growth' ? '#5c6ac4' : '#6d7175',
-                      border: `1px solid ${sub.plan?.slug === 'pro' ? '#f49342' : sub.plan?.slug === 'growth' ? '#5c6ac4' : '#e1e3e5'}`,
+                      color: sub.plan?.slug === 'pro' ? '#f49342' : sub.plan?.slug === 'growth' ? '#1a1a1a' : '#6d7175',
+                      border: `1px solid ${sub.plan?.slug === 'pro' ? '#f49342' : sub.plan?.slug === 'growth' ? '#1a1a1a' : '#e1e3e5'}`,
                     }}>
                       {sub.plan?.name || '—'}
                     </span>

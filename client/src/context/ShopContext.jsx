@@ -61,14 +61,11 @@ export function ShopProvider({ children }) {
         const hasActiveSub = sub && ['active', 'trial'].includes(sub.status);
 
         // Redirect to billing only when we got a real API response confirming no active plan
-        // (if the API call itself failed, leave the user where they are)
+        // (if the API call itself failed, leave the user where they are).
+        // Subscribed users can freely visit /billing to change/upgrade/downgrade their plan —
+        // do NOT bounce them away.
         if (!onBillingPage && !subFailed && !hasActiveSub) {
           navigate(`/billing${window.location.search}`);
-        }
-
-        // If already on billing page but subscription is active, go to dashboard
-        if (onBillingPage && hasActiveSub) {
-          navigate(`/${window.location.search}`);
         }
       } catch (err) {
         console.error('ShopContext load error:', err);

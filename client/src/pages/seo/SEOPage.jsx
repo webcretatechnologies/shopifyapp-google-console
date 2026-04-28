@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from 'react-query';
-import { Text, Box, Banner, Spinner, Button } from '@shopify/polaris';
+import { Page, Text, Box, Banner, Spinner, Button, ButtonGroup, Tabs, TextField, Card } from '@shopify/polaris';
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -9,6 +9,7 @@ import { analyticsApi, settingsApi } from '../../api';
 import { useShop } from '../../context/ShopContext';
 import { usePlan, downloadCSV } from '../../hooks/usePlan';
 import PlanGate from '../../components/PlanGate';
+import DateRangeFilter from '../../components/DateRangeFilter';
 
 // ── utils ─────────────────────────────────────────────────────────────────────
 const fmt    = n => (n||0).toLocaleString();
@@ -107,9 +108,7 @@ function SCard({ title, action, noPad, children }) {
 }
 
 function PBtn({ label, active, onClick }) {
-  return (
-    <button onClick={onClick} style={{ padding:'6px 14px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:500, background:active?'#5c6ac4':'#f1f2f3', color:active?'#fff':'#202223' }}>{label}</button>
-  );
+  return <Button pressed={active} onClick={onClick}>{label}</Button>;
 }
 
 const CustomTip = ({ active, payload, label }) => {
@@ -126,8 +125,8 @@ const CustomTip = ({ active, payload, label }) => {
   );
 };
 
-const SC_COLORS = { clicks:'#1a73e8', impressions:'#6b2da8', ctr:'#137333', position:'#e37400' };
-const PIE_COLORS = ['#5c6ac4','#50b83c','#47c1bf','#f49342','#9b59b6','#3498db'];
+const SC_COLORS = { clicks:'#1a73e8', impressions:'#1a1a1a', ctr:'#137333', position:'#e37400' };
+const PIE_COLORS = ['#1a1a1a','#50b83c','#47c1bf','#f49342','#303030','#3498db'];
 
 // ── Trending computation ───────────────────────────────────────────────────────
 function computeTrend(currentRows, prevRows, keyField, valueField) {
@@ -189,22 +188,19 @@ export default function SEOPage() {
 
   if (!can('searchConsole')) {
     return (
-      <PlanGate feature="searchConsole" required="growth">
-        <div style={{ padding:40, minHeight:400 }}>
-          <div style={{ fontSize:22, fontWeight:700, color:'#202223', marginBottom:8 }}>Search Console</div>
-          <div style={{ fontSize:13, color:'#6d7175' }}>SEO performance, queries, pages, countries &amp; devices</div>
-        </div>
-      </PlanGate>
+      <Page title="Search Console" subtitle="SEO performance, queries, pages, countries & devices">
+        <PlanGate feature="searchConsole" required="growth"><div /></PlanGate>
+      </Page>
     );
   }
 
   if (!googleStatus?.connected) {
     return (
-      <div style={{ padding:40 }}>
+      <Page title="Search Console">
         <Banner title="Google not connected" tone="warning" action={{ content:'Connect Google', url:'/connect-google' }}>
-          Connect your Google account to view Search Console data.
+          <p>Connect your Google account to view Search Console data.</p>
         </Banner>
-      </div>
+      </Page>
     );
   }
 
@@ -276,47 +272,42 @@ export default function SEOPage() {
   ];
 
   return (
-    <div style={{ padding:'4px 0 40px' }}>
-      {/* Header */}
-      <div style={{ marginBottom:16 }}>
-        <div style={{ fontSize:22, fontWeight:700, color:'#202223', marginBottom:4 }}>Search Console</div>
-        <div style={{ fontSize:13, color:'#6d7175' }}>SEO performance, queries, pages, countries &amp; devices</div>
-      </div>
+    <Page title="Search Console" subtitle="SEO performance, queries, pages, countries & devices">
 
-      {/* Date range bar */}
-      <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', padding:'12px 20px', marginBottom:20 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            {[['7d','7 Days'],['28d','28 Days'],['90d','90 Days']].map(([v,l])=>(
-              <PBtn key={v} label={l} active={!showCust&&preset===v} onClick={()=>{ setPreset(v); setShowCust(false); }}/>
-            ))}
-            <PBtn label="Custom Range" active={showCust} onClick={()=>setShowCust(s=>!s)}/>
-          </div>
-          <span style={{ fontSize:12, color:'#6d7175' }}>{range.startDate} → {range.endDate}</span>
-        </div>
-        {showCust && (
-          <div style={{ marginTop:12, display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-            <input type="date" value={customS} onChange={e=>setCustomS(e.target.value)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid #c4cdd5', fontSize:13 }}/>
-            <span style={{ color:'#6d7175' }}>to</span>
-            <input type="date" value={customE} onChange={e=>setCustomE(e.target.value)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid #c4cdd5', fontSize:13 }}/>
-          </div>
-        )}
+      {/* Date range filter — Shopify admin style */}
+      <div style={{ marginBottom: 20 }}>
+        <DateRangeFilter
+          value={{
+            start: range.startDate,
+            end:   range.endDate,
+          }}
+          onChange={({ presetId, startIso, endIso }) => {
+            const map = { last7: '7d', last30: '28d', last90: '90d' };
+            if (map[presetId]) {
+              setPreset(map[presetId]);
+              setShowCust(false);
+              setCustomS('');
+              setCustomE('');
+            } else {
+              setShowCust(true);
+              setCustomS(startIso);
+              setCustomE(endIso);
+            }
+          }}
+          presets={['today','last7','last30','last60','last90','last360']}
+        />
       </div>
 
       {eO && <div style={{ marginBottom:16 }}><Banner tone="critical" title="Search Console error"><Text variant="bodySm">{eO?.error||'Failed to load. Ensure Search Console property is configured.'}</Text></Banner></div>}
 
-      {/* Section navigation (like GSC sidebar) */}
-      <div style={{ display:'flex', gap:0, background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', marginBottom:20, overflow:'hidden' }}>
-        {sections.map(s => (
-          <button key={s.id} onClick={()=>setSection(s.id)} style={{
-            flex:1, padding:'12px 8px', border:'none', cursor:'pointer', fontSize:13,
-            fontWeight: section===s.id ? 600 : 400,
-            background: section===s.id ? '#5c6ac4' : 'transparent',
-            color: section===s.id ? '#fff' : '#6d7175',
-            borderRight:'1px solid #e1e3e5', transition:'all 0.15s',
-          }}>{s.label}</button>
-        ))}
-      </div>
+      {/* Section navigation */}
+      <Box paddingBlockEnd="400">
+        <Tabs
+          tabs={sections.map(s => ({ id: s.id, content: s.label, accessibilityLabel: s.label, panelID: `${s.id}-panel` }))}
+          selected={sections.findIndex(s => s.id === section)}
+          onSelect={(i) => setSection(sections[i].id)}
+        />
+      </Box>
 
       {/* ── OVERVIEW ── */}
       {section==='overview' && (
@@ -330,7 +321,7 @@ export default function SEOPage() {
             </div>
             <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', padding:'20px 28px', flex:1 }}>
               <div style={{ fontSize:11, fontWeight:600, color:'#6d7175', textTransform:'uppercase', letterSpacing:'0.4px', marginBottom:8 }}>Total Impressions</div>
-              <div style={{ fontSize:32, fontWeight:700, color:'#6b2da8' }}>{lO?'…':fmt(tot.impressions)}</div>
+              <div style={{ fontSize:32, fontWeight:700, color:'#1a1a1a' }}>{lO?'…':fmt(tot.impressions)}</div>
               <div style={{ fontSize:12, color:'#6d7175', marginTop:4 }}>results shown</div>
             </div>
             <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', padding:'20px 28px', flex:1 }}>
@@ -444,26 +435,25 @@ export default function SEOPage() {
           {/* Tabbed table */}
           <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', overflow:'hidden' }}>
             <div style={{ borderBottom:'1px solid #e1e3e5', display:'flex', justifyContent:'space-between', alignItems:'center', padding:'0 16px', overflowX:'auto' }}>
-              <div style={{ display:'flex' }}>
-                {perfTabs.map(t=>(
-                  <button key={t.id} onClick={()=>setPerfTab(t.id)} style={{
-                    padding:'12px 18px', border:'none', cursor:'pointer', fontSize:13, whiteSpace:'nowrap',
-                    fontWeight:perfTab===t.id?600:400, background:'transparent',
-                    color:perfTab===t.id?'#1a73e8':'#6d7175',
-                    borderBottom:perfTab===t.id?'2px solid #1a73e8':'2px solid transparent',
-                  }}>
-                    {t.label} <span style={{ fontSize:11, color:'#9ba3ab' }}>({t.count})</span>
-                  </button>
+              <ButtonGroup variant="segmented">
+                {perfTabs.map(t => (
+                  <Button key={t.id} pressed={perfTab === t.id} onClick={() => setPerfTab(t.id)}>
+                    {t.label} ({t.count})
+                  </Button>
                 ))}
-              </div>
-              <div style={{ display:'flex', gap:8, padding:'8px 0', flexShrink:0 }}>
+              </ButtonGroup>
+              <div style={{ display:'flex', gap:8, padding:'8px 0', flexShrink:0, alignItems:'center' }}>
                 {(perfTab==='queries') && <>
-                  <input type="text" value={querySearch} onChange={e=>setQuerySearch(e.target.value)} placeholder="Search queries…" style={{ padding:'5px 10px', borderRadius:6, border:'1px solid #c4cdd5', fontSize:12, width:160 }}/>
-                  can('csvExport') && <Button size="slim" onClick={()=>downloadCSV(filteredQ,`sc-queries-${range.startDate}.csv`)}>Export CSV</Button>
+                  <div style={{ width: 200 }}>
+                    <TextField label="Search queries" labelHidden value={querySearch} onChange={setQuerySearch} placeholder="Search queries…" autoComplete="off" />
+                  </div>
+                  {can('csvExport') && <Button onClick={()=>downloadCSV(filteredQ,`sc-queries-${range.startDate}.csv`)}>Export CSV</Button>}
                 </>}
                 {(perfTab==='pages') && <>
-                  <input type="text" value={pageSearch} onChange={e=>setPageSearch(e.target.value)} placeholder="Search pages…" style={{ padding:'5px 10px', borderRadius:6, border:'1px solid #c4cdd5', fontSize:12, width:160 }}/>
-                  can('csvExport') && <Button size="slim" onClick={()=>downloadCSV(filteredP,`sc-pages-${range.startDate}.csv`)}>Export CSV</Button>
+                  <div style={{ width: 200 }}>
+                    <TextField label="Search pages" labelHidden value={pageSearch} onChange={setPageSearch} placeholder="Search pages…" autoComplete="off" />
+                  </div>
+                  {can('csvExport') && <Button onClick={()=>downloadCSV(filteredP,`sc-pages-${range.startDate}.csv`)}>Export CSV</Button>}
                 </>}
                 {perfTab==='countries' && can('csvExport') && <Button size="slim" onClick={()=>downloadCSV(countries,`sc-countries-${range.startDate}.csv`)}>Export CSV</Button>}
                 {perfTab==='devices'   && can('csvExport') && <Button size="slim" onClick={()=>downloadCSV(devices,  `sc-devices-${range.startDate}.csv`)}>Export CSV</Button>}
@@ -478,8 +468,8 @@ export default function SEOPage() {
                   {[
                     { label:'Brand Clicks', value:fmt(brandClicks), color:'#1a73e8', pct: tot.clicks ? ((brandClicks/tot.clicks)*100).toFixed(1) : 0 },
                     { label:'Non-Brand Clicks', value:fmt(nonBrandClicks), color:'#e37400', pct: tot.clicks ? ((nonBrandClicks/tot.clicks)*100).toFixed(1) : 0 },
-                    { label:'Brand Impressions', value:fmt(brandImpressions), color:'#6b2da8', pct: null },
-                    { label:'Non-Brand Impressions', value:fmt(nonBrandImpressions), color:'#9b59b6', pct: null },
+                    { label:'Brand Impressions', value:fmt(brandImpressions), color:'#1a1a1a', pct: null },
+                    { label:'Non-Brand Impressions', value:fmt(nonBrandImpressions), color:'#303030', pct: null },
                     { label:'Brand Avg. Position', value:`#${brandAvgPos.toFixed(1)}`, color:'#137333', pct: null },
                     { label:'Non-Brand Avg. Position', value:`#${nonBrandAvgPos.toFixed(1)}`, color:'#c05717', pct: null },
                   ].map(({ label, value, color, pct }) => (
@@ -492,19 +482,15 @@ export default function SEOPage() {
                 </div>
                 {/* Pie chart split */}
                 <div style={{ display:'flex', gap:20, alignItems:'center', flexWrap:'wrap' }}>
-                  <div style={{ display:'flex', gap:8 }}>
+                  <ButtonGroup variant="segmented">
                     {[
                       { label:'All Queries', val:'all' },
                       { label:`Brand (${brandQueries.length})`, val:'brand' },
                       { label:`Non-Brand (${nonBrandQueries.length})`, val:'nonbrand' },
                     ].map(({ label, val }) => (
-                      <button key={val} onClick={() => setBrandView(val)} style={{
-                        padding:'5px 12px', borderRadius:20, border:'none', cursor:'pointer', fontSize:12, fontWeight:600,
-                        background: brandView===val ? '#1a73e8' : '#f1f2f3',
-                        color: brandView===val ? '#fff' : '#202223',
-                      }}>{label}</button>
+                      <Button key={val} pressed={brandView===val} onClick={() => setBrandView(val)} size="slim">{label}</Button>
                     ))}
-                  </div>
+                  </ButtonGroup>
                   <div style={{ display:'flex', gap:16, alignItems:'center', fontSize:12, color:'#6d7175' }}>
                     {tot.clicks > 0 && <>
                       <span style={{ display:'flex', alignItems:'center', gap:5 }}>
@@ -602,16 +588,13 @@ export default function SEOPage() {
           <SCard title="Your Content" noPad action={
             can('csvExport') && <Button size="slim" onClick={()=>downloadCSV(pages,`sc-content-${range.startDate}.csv`)}>Export CSV</Button>
           }>
-            <div style={{ borderBottom:'1px solid #e1e3e5', display:'flex', padding:'0 16px' }}>
-              {[['top','Top'],['up','Trending Up'],['down','Trending Down']].map(([v,l])=>(
-                <button key={v} onClick={()=>setInsightTab(v)} style={{
-                  padding:'10px 16px', border:'none', cursor:'pointer', fontSize:13,
-                  fontWeight:insightTab===v?600:400, background:'transparent',
-                  color:insightTab===v?'#1a73e8':'#6d7175',
-                  borderBottom:insightTab===v?'2px solid #1a73e8':'2px solid transparent',
-                }}>{l}</button>
-              ))}
-            </div>
+            <Box padding="300" borderBlockEndWidth="025" borderColor="border">
+              <ButtonGroup variant="segmented">
+                {[['top','Top'],['up','Trending Up'],['down','Trending Down']].map(([v,l])=>(
+                  <Button key={v} pressed={insightTab===v} onClick={()=>setInsightTab(v)} size="slim">{l}</Button>
+                ))}
+              </ButtonGroup>
+            </Box>
             {lP ? <LoadSpin/> : (
               <div>
                 {(insightTab==='top' ? pages.slice(0,10) : insightTab==='up' ? trendingUpP : trendingDownP).map((p,i,arr)=>(
@@ -634,16 +617,13 @@ export default function SEOPage() {
           <SCard title="Queries Leading to Your Site" noPad action={
             can('csvExport') && <Button size="slim" onClick={()=>downloadCSV(queries,`sc-queries-${range.startDate}.csv`)}>Export CSV</Button>
           }>
-            <div style={{ borderBottom:'1px solid #e1e3e5', display:'flex', padding:'0 16px' }}>
-              {[['top','Top'],['up','Trending Up'],['down','Trending Down']].map(([v,l])=>(
-                <button key={v} onClick={()=>setQueryInsTab(v)} style={{
-                  padding:'10px 16px', border:'none', cursor:'pointer', fontSize:13,
-                  fontWeight:queryInsTab===v?600:400, background:'transparent',
-                  color:queryInsTab===v?'#1a73e8':'#6d7175',
-                  borderBottom:queryInsTab===v?'2px solid #1a73e8':'2px solid transparent',
-                }}>{l}</button>
-              ))}
-            </div>
+            <Box padding="300" borderBlockEndWidth="025" borderColor="border">
+              <ButtonGroup variant="segmented">
+                {[['top','Top'],['up','Trending Up'],['down','Trending Down']].map(([v,l])=>(
+                  <Button key={v} pressed={queryInsTab===v} onClick={()=>setQueryInsTab(v)} size="slim">{l}</Button>
+                ))}
+              </ButtonGroup>
+            </Box>
             {lQ ? <LoadSpin/> : (
               <div>
                 {(queryInsTab==='top' ? queries.slice(0,10) : queryInsTab==='up' ? trendingUpQ : trendingDownQ).map((q,i,arr)=>(
@@ -722,7 +702,7 @@ export default function SEOPage() {
                       <XAxis type="number" tick={{ fontSize:11 }}/>
                       <YAxis type="category" dataKey="country" width={90} tick={{ fontSize:11, fill:'#202223', textTransform:'uppercase' }}/>
                       <Tooltip formatter={v=>[fmt(v),'Impressions']}/>
-                      <Bar dataKey="impressions" fill="#6b2da8" radius={[0,4,4,0]} name="Impressions"/>
+                      <Bar dataKey="impressions" fill="#1a1a1a" radius={[0,4,4,0]} name="Impressions"/>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -814,7 +794,7 @@ export default function SEOPage() {
                     <Tooltip content={<CustomTip />} />
                     <Legend />
                     <Bar yAxisId="l" dataKey="clicks"      fill="#1a73e8" radius={[4,4,0,0]} name="Clicks" />
-                    <Bar yAxisId="r" dataKey="impressions" fill="#6b2da8" radius={[4,4,0,0]} name="Impressions" />
+                    <Bar yAxisId="r" dataKey="impressions" fill="#1a1a1a" radius={[4,4,0,0]} name="Impressions" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -822,7 +802,7 @@ export default function SEOPage() {
           </SCard>
         </>
       )}
-    </div>
+    </Page>
   );
 }
 

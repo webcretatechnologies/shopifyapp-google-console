@@ -127,7 +127,7 @@ function StepCard({ step, isExpanded, onToggle }) {
                 <InlineStack key={i} gap="200" blockAlign="start">
                   <div style={{
                     width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                    background: '#f4f5fa', color: '#5c6ac4',
+                    background: '#f4f5fa', color: '#1a1a1a',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontWeight: 700, fontSize: 11, marginTop: 1,
                   }}>
@@ -197,7 +197,7 @@ export default function SetupGuide() {
               ].map(link => (
                 <Box key={link.label} background="bg-surface-secondary" padding="300" borderRadius="200">
                   <BlockStack gap="100">
-                    <a href={link.url} target="_blank" rel="noreferrer" style={{ color: '#5c6ac4', fontWeight: 600, fontSize: 13 }}>
+                    <a href={link.url} target="_blank" rel="noreferrer" style={{ color: '#1a1a1a', fontWeight: 600, fontSize: 13 }}>
                       {link.label} ↗
                     </a>
                     <Text variant="bodySm" tone="subdued">{link.desc}</Text>

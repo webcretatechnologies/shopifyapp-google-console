@@ -1,0 +1,7 @@
+/* Make every Polaris <Page> stretch to the full viewport width.
+   By default Polaris caps Page at ~998px, which leaves big empty side gutters
+   inside the Shopify admin frame. We only override the max-width — internal
+   horizontal padding is left intact so cards keep their normal side spacing. */
+.Polaris-Page {
+  max-width: 100% !important;
+}

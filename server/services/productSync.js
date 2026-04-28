@@ -70,18 +70,20 @@ async function upsertProduct(shopId, shopDomain, shopifyProduct) {
 
 // Full sync — fetch all products via paginated REST API
 // Shopify status param accepts: active, archived, draft (NOT 'any')
-// We loop all three to get everything
-async function syncAllProducts(shopId, shopDomain, accessToken) {
+// We loop all three to get everything.
+// `maxProducts` (default 0 = unlimited) caps total upserts; once reached we stop early.
+async function syncAllProducts(shopId, shopDomain, accessToken, maxProducts = 0) {
   const statuses = ['active', 'draft', 'archived'];
+  const cap = Number.isFinite(maxProducts) && maxProducts > 0 ? maxProducts : 0;
   let totalSynced = 0;
 
-  for (const status of statuses) {
+  outer: for (const status of statuses) {
     let url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/products.json?limit=250&status=${status}`;
     let page = 0;
 
     while (url) {
       page++;
-      console.log(`[ProductSync] ${status} page ${page} for ${shopDomain}`);
+      console.log(`[ProductSync] ${status} page ${page} for ${shopDomain}${cap ? ` (cap ${cap})` : ''}`);
 
       const res = await axios.get(url, {
         headers: { 'X-Shopify-Access-Token': accessToken },
@@ -90,20 +92,19 @@ async function syncAllProducts(shopId, shopDomain, accessToken) {
       const products = res.data.products || [];
       if (products.length === 0) break;
 
-      // Upsert sequentially to avoid DB connection flooding on large stores
       for (const p of products) {
+        if (cap && totalSynced >= cap) break outer;
         await upsertProduct(shopId, shopDomain, p);
+        totalSynced++;
       }
-      totalSynced += products.length;
 
-      // Shopify cursor-based pagination via Link header
       const linkHeader = res.headers['link'] || '';
       const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
       url = nextMatch ? nextMatch[1] : null;
     }
   }
 
-  console.log(`[ProductSync] Done — ${totalSynced} products synced for shop ${shopDomain}`);
+  console.log(`[ProductSync] Done — ${totalSynced} products synced for ${shopDomain}${cap ? ` (cap ${cap})` : ''}`);
   return totalSynced;
 }
 

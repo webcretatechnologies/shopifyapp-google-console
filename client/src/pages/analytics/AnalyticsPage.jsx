@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from 'react-query';
-import { Page, Text, BlockStack, InlineStack, Box, Banner, Spinner, Button } from '@shopify/polaris';
+import { Page, Text, BlockStack, InlineStack, Box, Banner, Spinner, Button, ButtonGroup } from '@shopify/polaris';
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -9,16 +9,17 @@ import { analyticsApi } from '../../api';
 import { useShop } from '../../context/ShopContext';
 import { usePlan, downloadCSV } from '../../hooks/usePlan';
 import PlanGate from '../../components/PlanGate';
+import DateRangeFilter from '../../components/DateRangeFilter';
 
 const fmt    = n => (n||0).toLocaleString();
 const fmtPct = n => `${parseFloat(n||0).toFixed(2)}%`;
 const fmtSec = n => { const s=Math.round(n||0); return s>=60?`${Math.floor(s/60)}m ${s%60}s`:`${s}s`; };
 const fmtDate = d => { if(!d) return ''; if(d.length===8) return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`; return d; };
 const fmtMoney = n => `₹${(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-const PIE_COLORS = ['#5c6ac4','#50b83c','#47c1bf','#f49342','#de3618','#9b59b6','#3498db','#1abc9c'];
-const DEVICE_COLORS = { mobile:'#5c6ac4', desktop:'#50b83c', tablet:'#f49342' };
+const PIE_COLORS = ['#1a1a1a','#50b83c','#47c1bf','#f49342','#de3618','#303030','#3498db','#1abc9c'];
+const DEVICE_COLORS = { mobile:'#1a1a1a', desktop:'#50b83c', tablet:'#f49342' };
 
-function KPICard({ label, value, color='#5c6ac4', sub }) {
+function KPICard({ label, value, color='#1a1a1a', sub }) {
   return (
     <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', padding:'20px 24px', flex:1, minWidth:140 }}>
       <div style={{ fontSize:11, color:'#6d7175', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:8 }}>{label}</div>
@@ -75,12 +76,7 @@ const CustomTip = ({ active, payload, label }) => {
 };
 
 function PBtn({ label, active, onClick }) {
-  return (
-    <button onClick={onClick} style={{
-      padding:'6px 14px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:500,
-      background: active?'#5c6ac4':'#f1f2f3', color: active?'#fff':'#202223',
-    }}>{label}</button>
-  );
+  return <Button pressed={active} onClick={onClick}>{label}</Button>;
 }
 
 function getRange(preset) {
@@ -186,42 +182,38 @@ export default function AnalyticsPage() {
         <div style={{ fontSize:13, color:'#6d7175' }}>Traffic, sessions &amp; audience data</div>
       </div>
 
-      {/* Date bar */}
-      <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', padding:'12px 20px', marginBottom:20 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            {[['7d','7 Days'],['30d','30 Days'],['90d','90 Days']].map(([v,l])=>(
-              <PBtn key={v} label={l} active={!showCust&&preset===v} onClick={()=>{ setPreset(v); setShowCust(false); }} />
-            ))}
-            <PBtn label="Custom Range" active={showCust} onClick={()=>setShowCust(s=>!s)} />
-          </div>
-          <span style={{ fontSize:12, color:'#6d7175' }}>{range.startDate} → {range.endDate}</span>
-        </div>
-        {showCust && (
-          <div style={{ marginTop:12, display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-            <input type="date" value={customS} onChange={e=>setCustomS(e.target.value)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid #c4cdd5', fontSize:13 }} />
-            <span style={{ color:'#6d7175' }}>to</span>
-            <input type="date" value={customE} onChange={e=>setCustomE(e.target.value)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid #c4cdd5', fontSize:13 }} />
-          </div>
-        )}
+      {/* Date range filter — Shopify admin style */}
+      <div style={{ marginBottom: 20 }}>
+        <DateRangeFilter
+          value={{ start: range.startDate, end: range.endDate }}
+          onChange={({ presetId, startIso, endIso }) => {
+            const map = { last7: '7d', last30: '30d', last90: '90d' };
+            if (map[presetId]) {
+              setPreset(map[presetId]); setShowCust(false); setCustomS(''); setCustomE('');
+            } else {
+              setShowCust(true); setCustomS(startIso); setCustomE(endIso);
+            }
+          }}
+          presets={['today','last7','last30','last60','last90','last360']}
+        />
       </div>
 
       {eS && <div style={{ marginBottom:16 }}><Banner tone="critical" title="GA4 error"><Text variant="bodySm">{eS?.error||'Failed to load GA4 data. Ensure GA4 property is configured.'}</Text></Banner></div>}
 
       {/* KPI cards */}
       <div style={{ display:'flex', gap:14, marginBottom:20, flexWrap:'wrap' }}>
-        <KPICard label="Sessions"              value={lS?'…':fmt(tot.sessions)}    color="#5c6ac4" />
+        <KPICard label="Sessions"              value={lS?'…':fmt(tot.sessions)}    color="#1a1a1a" />
         <KPICard label="Total Users"           value={lS?'…':fmt(tot.users)}       color="#50b83c" />
         <KPICard label="New Users"             value={lS?'…':fmt(tot.new_users)}   color="#47c1bf" />
         <KPICard label="Avg. Bounce Rate"      value={lS?'…':fmtPct(avgBounce)}    color="#f49342" />
-        <KPICard label="Avg. Session Duration" value={lS?'…':fmtSec(avgDur)}       color="#9b59b6" />
+        <KPICard label="Avg. Session Duration" value={lS?'…':fmtSec(avgDur)}       color="#303030" />
       </div>
 
       {/* Ecommerce KPIs */}
       {!lE && ecommTot.tx > 0 && (
         <div style={{ display:'flex', gap:14, marginBottom:20, flexWrap:'wrap' }}>
           <KPICard label="Revenue"       value={fmtMoney(ecommTot.rev)}  color="#50b83c" sub="GA4 ecommerce tracking" />
-          <KPICard label="Transactions"  value={fmt(ecommTot.tx)}        color="#5c6ac4" />
+          <KPICard label="Transactions"  value={fmt(ecommTot.tx)}        color="#1a1a1a" />
           <KPICard label="Add to Carts"  value={fmt(ecommTot.carts)}     color="#47c1bf" />
         </div>
       )}
@@ -236,7 +228,7 @@ export default function AnalyticsPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartD} margin={{ top:4, right:20, left:0, bottom:0 }}>
                   <defs>
-                    {[['gSs','#5c6ac4'],['gUs','#50b83c'],['gNs','#47c1bf']].map(([id,c])=>(
+                    {[['gSs','#1a1a1a'],['gUs','#50b83c'],['gNs','#47c1bf']].map(([id,c])=>(
                       <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={c} stopOpacity={0.18}/><stop offset="95%" stopColor={c} stopOpacity={0}/>
                       </linearGradient>
@@ -247,7 +239,7 @@ export default function AnalyticsPage() {
                   <YAxis tick={{ fontSize:11, fill:'#6d7175' }} width={50} />
                   <Tooltip content={<CustomTip />} />
                   <Legend />
-                  <Area type="monotone" dataKey="sessions"  stroke="#5c6ac4" fill="url(#gSs)" strokeWidth={2} dot={false} name="Sessions" />
+                  <Area type="monotone" dataKey="sessions"  stroke="#1a1a1a" fill="url(#gSs)" strokeWidth={2} dot={false} name="Sessions" />
                   <Area type="monotone" dataKey="users"     stroke="#50b83c" fill="url(#gUs)" strokeWidth={2} dot={false} name="Users" />
                   <Area type="monotone" dataKey="new_users" stroke="#47c1bf" fill="url(#gNs)" strokeWidth={2} dot={false} name="New Users" />
                 </AreaChart>
@@ -288,7 +280,7 @@ export default function AnalyticsPage() {
                     <XAxis dataKey="date" tick={{ fontSize:10, fill:'#6d7175' }} />
                     <YAxis tick={{ fontSize:10 }} tickFormatter={v=>fmtSec(v)} width={55} />
                     <Tooltip formatter={v=>[fmtSec(v),'Avg Duration']} />
-                    <Line type="monotone" dataKey="avg_session_duration" stroke="#9b59b6" strokeWidth={2} dot={false} name="Duration" />
+                    <Line type="monotone" dataKey="avg_session_duration" stroke="#303030" strokeWidth={2} dot={false} name="Duration" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -319,7 +311,7 @@ export default function AnalyticsPage() {
                     <Tooltip content={<CustomTip />} />
                     <Legend />
                     <Area yAxisId="l" type="monotone" dataKey="revenue"      stroke="#50b83c" fill="url(#gRev)" strokeWidth={2} dot={false} name="Revenue (₹)" />
-                    <Line yAxisId="r" type="monotone" dataKey="transactions" stroke="#5c6ac4" strokeWidth={2} dot={false} name="Transactions" />
+                    <Line yAxisId="r" type="monotone" dataKey="transactions" stroke="#1a1a1a" strokeWidth={2} dot={false} name="Transactions" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -332,18 +324,13 @@ export default function AnalyticsPage() {
       {/* Tabbed reports */}
       <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e1e3e5', overflow:'hidden' }}>
         <div style={{ borderBottom:'1px solid #e1e3e5', display:'flex', justifyContent:'space-between', alignItems:'center', padding:'0 16px', overflowX:'auto' }}>
-          <div style={{ display:'flex' }}>
+          <ButtonGroup variant="segmented">
             {tabs.map((t,i)=>(
-              <button key={i} onClick={()=>setTab(i)} style={{
-                padding:'12px 18px', border:'none', cursor:'pointer', fontSize:13, whiteSpace:'nowrap',
-                fontWeight:tab===i?600:400, background:'transparent',
-                color:tab===i?'#5c6ac4':'#6d7175',
-                borderBottom:tab===i?'2px solid #5c6ac4':'2px solid transparent',
-              }}>
-                {t.label} <span style={{ fontSize:11, color:'#9ba3ab' }}>({t.count})</span>
-              </button>
+              <Button key={i} pressed={tab===i} onClick={()=>setTab(i)}>
+                {t.label} ({t.count})
+              </Button>
             ))}
-          </div>
+          </ButtonGroup>
           <div style={{ display:'flex', gap:8, padding:'8px 0' }}>
             {tab===0 && can('csvExport') && <Button size="slim" onClick={()=>downloadCSV(sources,`ga4-sources-${range.startDate}.csv`)}>Export CSV</Button>}
             {tab===1 && can('csvExport') && <Button size="slim" onClick={()=>downloadCSV(countries,`ga4-countries-${range.startDate}.csv`)}>Export CSV</Button>}
@@ -398,7 +385,7 @@ export default function AnalyticsPage() {
                     <XAxis type="number" tick={{ fontSize:11 }}/>
                     <YAxis type="category" dataKey="country" width={110} tick={{ fontSize:11, fill:'#202223' }}/>
                     <Tooltip formatter={v=>[fmt(v),'Sessions']}/>
-                    <Bar dataKey="sessions" fill="#5c6ac4" radius={[0,4,4,0]} name="Sessions"/>
+                    <Bar dataKey="sessions" fill="#1a1a1a" radius={[0,4,4,0]} name="Sessions"/>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
