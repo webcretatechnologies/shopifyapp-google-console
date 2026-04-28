@@ -206,7 +206,7 @@ export default function AnalyticsPage() {
         <KPICard label="Total Users"           value={lS?'…':fmt(tot.users)}       color="#50b83c" />
         <KPICard label="New Users"             value={lS?'…':fmt(tot.new_users)}   color="#47c1bf" />
         <KPICard label="Avg. Bounce Rate"      value={lS?'…':fmtPct(avgBounce)}    color="#f49342" />
-        <KPICard label="Avg. Session Duration" value={lS?'…':fmtSec(avgDur)}       color="#303030" />
+        <KPICard label="Avg. Session Duration" value={lS?'…':fmtSec(avgDur)}       color="#1a1a1a" />
       </div>
 
       {/* Ecommerce KPIs */}
@@ -226,23 +226,16 @@ export default function AnalyticsPage() {
           {lS ? <Box padding="800" textAlign="center"><Spinner /></Box> : (
             <div style={{ height:300 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartD} margin={{ top:4, right:20, left:0, bottom:0 }}>
-                  <defs>
-                    {[['gSs','#1a1a1a'],['gUs','#50b83c'],['gNs','#47c1bf']].map(([id,c])=>(
-                      <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={c} stopOpacity={0.18}/><stop offset="95%" stopColor={c} stopOpacity={0}/>
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" />
-                  <XAxis dataKey="date" tick={{ fontSize:11, fill:'#6d7175' }} />
-                  <YAxis tick={{ fontSize:11, fill:'#6d7175' }} width={50} />
+                <LineChart data={chartD} margin={{ top:8, right:20, left:0, bottom:0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize:11, fill:'#6d7175' }} axisLine={{ stroke:'#e1e3e5' }} tickLine={false} />
+                  <YAxis tick={{ fontSize:11, fill:'#6d7175' }} width={50} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTip />} />
-                  <Legend />
-                  <Area type="monotone" dataKey="sessions"  stroke="#1a1a1a" fill="url(#gSs)" strokeWidth={2} dot={false} name="Sessions" />
-                  <Area type="monotone" dataKey="users"     stroke="#50b83c" fill="url(#gUs)" strokeWidth={2} dot={false} name="Users" />
-                  <Area type="monotone" dataKey="new_users" stroke="#47c1bf" fill="url(#gNs)" strokeWidth={2} dot={false} name="New Users" />
-                </AreaChart>
+                  <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" iconSize={8} />
+                  <Line type="monotone" dataKey="sessions"  stroke="#1a1a1a" strokeWidth={2} dot={false} name="Sessions" />
+                  <Line type="monotone" dataKey="users"     stroke="#50b83c" strokeWidth={2} dot={false} name="Users" />
+                  <Line type="monotone" dataKey="new_users" stroke="#47c1bf" strokeWidth={2} dot={false} name="New Users" />
+                </LineChart>
               </ResponsiveContainer>
             </div>
           )}
@@ -280,7 +273,7 @@ export default function AnalyticsPage() {
                     <XAxis dataKey="date" tick={{ fontSize:10, fill:'#6d7175' }} />
                     <YAxis tick={{ fontSize:10 }} tickFormatter={v=>fmtSec(v)} width={55} />
                     <Tooltip formatter={v=>[fmtSec(v),'Avg Duration']} />
-                    <Line type="monotone" dataKey="avg_session_duration" stroke="#303030" strokeWidth={2} dot={false} name="Duration" />
+                    <Line type="monotone" dataKey="avg_session_duration" stroke="#1a1a1a" strokeWidth={2} dot={false} name="Duration" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

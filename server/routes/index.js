@@ -12,5 +12,8 @@ router.use('/products', require('./products'));
 router.use('/insights', require('./insights'));
 router.use('/audit', require('./audit'));
 router.use('/ai-visibility', require('./aiVisibility'));
+router.use('/content', require('./content'));
+router.use('/faqs', require('./faqs'));
+router.use('/structured-markup', require('./structuredMarkup'));
 
 module.exports = router;

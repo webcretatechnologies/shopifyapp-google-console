@@ -1,12 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
-const { Admin, Shop, Subscription, BillingPlan, GoogleAccount } = require('../models');
+const { Admin, Shop, Subscription, BillingPlan, GoogleAccount, EmailTemplate } = require('../models');
 const { adminAuth, requireRole } = require('../middleware/adminAuth');
 const { getAllConfigs, setManyConfigs } = require('../services/appConfig');
+const { EVENT_META, EVENT_KEYS, DEFAULT_TEMPLATES, applyTokens, layout } = require('../services/email');
 const { Op } = require('sequelize');
 
 const JWT_SECRET = process.env.JWT_ADMIN_SECRET || 'admin-secret';
+
+// Disable HTTP caching across the admin API so the browser never serves a
+// stale 304 for /me/stats/etc. — those caches were causing the auth state
+// to look "logged in" while underlying API calls were 401-ing.
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+  next();
+});
 
 // Auth
 router.post('/login', async (req, res) => {
@@ -19,7 +31,9 @@ router.post('/login', async (req, res) => {
   }
 
   await admin.update({ last_login_at: new Date() });
-  const token = jwt.sign({ id: admin.id, role: admin.role }, JWT_SECRET, { expiresIn: '8h' });
+  // 7-day session — admins don't log in often; 8h was causing "sometimes the
+  // panel opens, sometimes it kicks me to login" reports.
+  const token = jwt.sign({ id: admin.id, role: admin.role }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ token, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role } });
 });
 
@@ -174,6 +188,84 @@ router.put('/config', adminAuth, requireRole('super_admin'), async (req, res) =>
   } catch (err) {
     console.error('PUT /admin/config:', err);
     res.status(500).json({ error: err.message || 'Failed to save config' });
+  }
+});
+
+// ── Email template layouts ──────────────────────────────────────────────────
+// Admin sees a flat list of all transactional emails. For each event the
+// admin can override the header / body / footer; whatever is empty falls back
+// to the baked-in default at send time.
+
+// GET /admin/email-templates — list of all events with current saved layout (or defaults)
+router.get('/email-templates', adminAuth, requireRole('super_admin'), async (req, res) => {
+  try {
+    const rows = await EmailTemplate.findAll();
+    const byKey = Object.fromEntries(rows.map(r => [r.event_key, r]));
+    const events = EVENT_KEYS.map(key => {
+      const def = DEFAULT_TEMPLATES[key];
+      const row = byKey[key];
+      return {
+        key,
+        label: EVENT_META[key].label,
+        description: EVENT_META[key].description,
+        availableTokens: EVENT_META[key].availableTokens,
+        saved: !!row,
+        subject:     row?.subject     ?? def.subject,
+        header_html: row?.header_html ?? '',
+        body_html:   row?.body_html   ?? def.body_html,
+        footer_html: row?.footer_html ?? def.footer_html ?? '',
+      };
+    });
+    res.json({ events });
+  } catch (err) {
+    console.error('GET /admin/email-templates:', err);
+    res.status(500).json({ error: err.message || 'Failed to load templates' });
+  }
+});
+
+// PUT /admin/email-templates — save layout for one event
+router.put('/email-templates', adminAuth, requireRole('super_admin'), async (req, res) => {
+  try {
+    const { event_key, subject, header_html, body_html, footer_html } = req.body || {};
+    if (!EVENT_KEYS.includes(event_key)) return res.status(400).json({ error: 'invalid event_key' });
+    if (!subject?.trim() || !body_html?.trim()) return res.status(400).json({ error: 'subject and content are required' });
+
+    const data = {
+      event_key,
+      subject: subject.trim(),
+      header_html: header_html || null,
+      body_html,
+      footer_html: footer_html || null,
+      updated_by: req.admin?.id || null,
+    };
+    const existing = await EmailTemplate.findOne({ where: { event_key } });
+    let row;
+    if (existing) { await existing.update(data); row = existing; }
+    else { row = await EmailTemplate.create(data); }
+    res.json({ success: true, id: row.id });
+  } catch (err) {
+    console.error('PUT /admin/email-templates:', err);
+    res.status(500).json({ error: err.message || 'Failed to save template' });
+  }
+});
+
+// POST /admin/email-templates/preview — render unsaved edits with sample tokens
+router.post('/email-templates/preview', adminAuth, requireRole('super_admin'), async (req, res) => {
+  try {
+    const { event_key, subject, header_html, body_html, footer_html } = req.body || {};
+    if (!EVENT_KEYS.includes(event_key)) return res.status(400).json({ error: 'invalid event_key' });
+    const tokens = EVENT_META[event_key].sampleTokens || {};
+    const subj = applyTokens(subject || '', tokens);
+    const html = layout({
+      subject: subj,
+      headerHtml: applyTokens(header_html || '', tokens),
+      bodyHtml: applyTokens(body_html || '', tokens),
+      footerHtml: applyTokens(footer_html || '', tokens),
+    });
+    res.json({ subject: subj, html });
+  } catch (err) {
+    console.error('POST /admin/email-templates/preview:', err);
+    res.status(500).json({ error: err.message || 'Preview failed' });
   }
 });
 

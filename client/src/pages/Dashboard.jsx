@@ -182,25 +182,15 @@ function GA4Tab({ period }) {
             {lS ? <LoadingBox /> : (
               <div style={{ height: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gSess" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#1a1a1a" stopOpacity={0.18} />
-                        <stop offset="95%" stopColor="#1a1a1a" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="gUsers" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#50b83c" stopOpacity={0.18} />
-                        <stop offset="95%" stopColor="#50b83c" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6d7175' }} />
-                    <YAxis tick={{ fontSize: 11, fill: '#6d7175' }} width={45} />
+                  <LineChart data={chartData} margin={{ top: 8, right: 20, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6d7175' }} axisLine={{ stroke:'#e1e3e5' }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#6d7175' }} width={45} axisLine={false} tickLine={false} />
                     <Tooltip formatter={(v, n) => [fmt(v), n]} />
-                    <Legend />
-                    <Area type="monotone" dataKey="sessions" stroke="#1a1a1a" fill="url(#gSess)" strokeWidth={2} dot={false} name="Sessions" />
-                    <Area type="monotone" dataKey="users"    stroke="#50b83c" fill="url(#gUsers)" strokeWidth={2} dot={false} name="Users" />
-                  </AreaChart>
+                    <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" iconSize={8} />
+                    <Line type="monotone" dataKey="sessions" stroke="#1a1a1a" strokeWidth={2} dot={false} name="Sessions" />
+                    <Line type="monotone" dataKey="users"    stroke="#50b83c" strokeWidth={2} dot={false} name="Users" />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             )}
@@ -361,26 +351,16 @@ function SearchConsoleTab({ period }) {
             {lO ? <LoadingBox /> : (
               <div style={{ height: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gClicks" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#1a1a1a" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#1a1a1a" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="gImpr" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#303030" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#303030" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6d7175' }} />
-                    <YAxis yAxisId="left"  tick={{ fontSize: 11, fill: '#6d7175' }} width={50} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#6d7175' }} width={65} />
+                  <LineChart data={chartData} margin={{ top: 8, right: 20, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6d7175' }} axisLine={{ stroke:'#e1e3e5' }} tickLine={false} />
+                    <YAxis yAxisId="left"  tick={{ fontSize: 11, fill: '#6d7175' }} width={50} axisLine={false} tickLine={false} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#6d7175' }} width={65} axisLine={false} tickLine={false} />
                     <Tooltip formatter={(v, n) => [fmt(v), n]} />
-                    <Legend />
-                    <Area yAxisId="left"  type="monotone" dataKey="clicks"      stroke="#1a1a1a" fill="url(#gClicks)" strokeWidth={2} dot={false} name="Clicks" />
-                    <Area yAxisId="right" type="monotone" dataKey="impressions" stroke="#303030" fill="url(#gImpr)"  strokeWidth={2} dot={false} name="Impressions" />
-                  </AreaChart>
+                    <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" iconSize={8} />
+                    <Line yAxisId="left"  type="monotone" dataKey="clicks"      stroke="#1a1a1a" strokeWidth={2} dot={false} name="Clicks" />
+                    <Line yAxisId="right" type="monotone" dataKey="impressions" stroke="#303030" strokeWidth={2} dot={false} name="Impressions" />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             )}

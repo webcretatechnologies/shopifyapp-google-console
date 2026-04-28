@@ -16,13 +16,14 @@ export default function AppLayout() {
         <a href={`/seo${qs}`}>SEO</a>
         <a href={`/site-audit${qs}`}>Site Audit</a>
         <a href={`/ai-visibility${qs}`}>AI Visibility</a>
+        <a href={`/content${qs}`}>Content &amp; Schema</a>
         <a href={`/sitemap${qs}`}>Sitemap Manager</a>
         <a href={`/analytics${qs}`}>Analytics</a>
         <a href={`/ads${qs}`}>Google Ads</a>
         <a href={`/connect-google${qs}`}>
           {googleStatus?.connected ? 'Connect Google' : 'Connect Google ⚠'}
         </a>
-        <a href={`/settings${qs}`}>API Settings</a>
+        <a href={`/settings${qs}`}>Settings</a>
         <a href={`/setup-guide${qs}`}>Google Setup</a>
         <a href={`/billing${qs}`}>Plan &amp; Billing</a>
         <a href={`/help${qs}`}>Help &amp; Guide</a>

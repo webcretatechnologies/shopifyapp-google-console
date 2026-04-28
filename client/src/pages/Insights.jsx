@@ -422,6 +422,94 @@ function AdsCorrelationTab() {
   );
 }
 
+// ── Sync banner ──────────────────────────────────────────────────────────────
+// Shows when SC/GA4/Ads data was last refreshed + a button to trigger an
+// on-demand fetch instead of waiting for the daily 02:00 UTC cron.
+function SyncBanner() {
+  const qc = useQueryClient();
+  const { data: status } = useQuery('insights-sync-status', insightsApi.syncStatus);
+  const [toast, setToast] = useState(null);
+
+  const syncNow = useMutation(insightsApi.syncNow, {
+    onSuccess: (data) => {
+      setToast({ tone: 'success', text: data.message || 'Sync complete' });
+      qc.invalidateQueries('insights-sync-status');
+      qc.invalidateQueries('insights-product-seo');
+      qc.invalidateQueries('insights-suggestions');
+      qc.invalidateQueries('insights-alerts');
+    },
+    onError: (err) => {
+      setToast({ tone: 'critical', text: err?.message || err?.error || 'Sync failed' });
+    },
+  });
+
+  if (!status) return null;
+
+  const lastSc = status.caches?.find(c => c.data_type === 'search_console');
+  const lastGa = status.caches?.find(c => c.data_type === 'ga4');
+  const propertyMismatch = status.sc_diagnostic?.total_rows > 0 &&
+                           status.sc_diagnostic?.product_page_rows === 0;
+
+  return (
+    <Box paddingBlockEnd="400">
+      <BlockStack gap="300">
+        {!status.google_connected && (
+          <Banner tone="warning" title="Google not connected"
+            action={{ content: 'Connect Google', url: '/connect-google' }}>
+            <Text as="p">Sync needs a connected Google account with a Search Console or GA4 property selected.</Text>
+          </Banner>
+        )}
+
+        {propertyMismatch && (
+          <Banner tone="warning" title="Search Console data doesn't match this store">
+            <Text as="p">
+              We have {status.sc_diagnostic.total_rows} Search Console rows cached for{' '}
+              <strong>{status.sc_diagnostic.search_console_property || status.search_console_property}</strong>,
+              but none of them match products in this Shopify store. Either change the Search Console property
+              in <strong>Connect Google</strong>, or test on a store whose domain is the verified SC property.
+            </Text>
+          </Banner>
+        )}
+
+        {toast && (
+          <Banner tone={toast.tone} onDismiss={() => setToast(null)}>
+            <Text as="p">{toast.text}</Text>
+          </Banner>
+        )}
+
+        <Card>
+          <InlineStack align="space-between" blockAlign="center" wrap>
+            <BlockStack gap="050">
+              <Text variant="bodyMd" as="p" fontWeight="semibold">Daily sync</Text>
+              <Text variant="bodySm" as="p" tone="subdued">
+                {lastSc
+                  ? `Search Console: ${lastSc.rows} rows · last refreshed ${new Date(lastSc.fetched_at).toLocaleString()}`
+                  : 'Search Console: never synced'}
+              </Text>
+              {lastGa && (
+                <Text variant="bodySm" as="p" tone="subdued">
+                  GA4: {lastGa.rows} rows · last refreshed {new Date(lastGa.fetched_at).toLocaleString()}
+                </Text>
+              )}
+              {!lastGa && status.ga4_property_id && (
+                <Text variant="bodySm" as="p" tone="subdued">GA4: never synced</Text>
+              )}
+            </BlockStack>
+            <Button
+              variant="primary"
+              loading={syncNow.isLoading}
+              disabled={!status.google_connected}
+              onClick={() => syncNow.mutate()}
+            >
+              {syncNow.isLoading ? 'Syncing…' : 'Sync now'}
+            </Button>
+          </InlineStack>
+        </Card>
+      </BlockStack>
+    </Box>
+  );
+}
+
 // ── Main Insights page ────────────────────────────────────────────────────────
 export default function Insights() {
   const [selected, setSelected] = useState(0);
@@ -438,6 +526,7 @@ export default function Insights() {
       title="Insights"
       subtitle="Product SEO rankings, stock alerts, SEO suggestions, and order attribution"
     >
+      <SyncBanner />
       <Card padding="0">
         <Tabs tabs={tabs} selected={selected} onSelect={setSelected}>
           <Box padding="400">

@@ -1,18 +1,26 @@
-// Transactional email service — wraps nodemailer with templates for every
-// app event (welcome, OAuth-connected, subscription, audit-done, etc.)
+// Transactional email service — wraps nodemailer with admin-editable templates.
 //
-// SMTP config lives in .env (SMTP_HOST/PORT/USER/PASS, EMAIL_FROM). When SMTP
-// is not configured the module no-ops gracefully so install/dev still works.
+// SMTP config lives in DB via appConfig (falls back to .env). When SMTP is not
+// configured the module no-ops gracefully so install/dev still works.
 //
-// All public send* functions are fire-and-forget — they never throw, they log
-// failures and return a result object so callers don't need try/catch.
+// Templates are stored in the `email_templates` table. Each event has up to
+// two variants (A / B); whichever is `is_active=true` is used. If no row
+// exists for an event, the baked-in DEFAULT_TEMPLATES below kicks in so the
+// app keeps working out of the box.
+//
+// Tokens like {{shop_name}} are replaced at send time using the per-event
+// payload — see EVENT_TOKENS below for what's available where.
 
 const nodemailer = require('nodemailer');
-const { ShopSettings } = require('../models');
+const { ShopSettings, EmailTemplate } = require('../models');
+const { Op } = require('sequelize');
 const { getConfig } = require('./appConfig');
 
-// ── Transport — rebuilt per-call (cheap) so admin config changes apply
-//     immediately. Returns null when SMTP isn't configured.
+// Events the merchant CANNOT opt out of (admin always controls). Per the
+// spec these are sent on system events; opt-out lives only on /admin/.
+const ADMIN_ONLY_EVENTS = new Set(['welcome', 'googleConnected', 'subscription']);
+
+// ── Transport ───────────────────────────────────────────────────────────────
 async function getTransport() {
   const host = await getConfig('SMTP_HOST') || 'smtp.gmail.com';
   const port = parseInt((await getConfig('SMTP_PORT')) || '587');
@@ -36,6 +44,262 @@ async function fromAddress() {
 }
 
 const APP_URL = process.env.APP_URL || 'https://analytics.boxtasks.com';
+
+// ── Layout (always-on chrome around the editable body + footer) ─────────────
+const COLORS = {
+  brand: '#1a1a1a', text: '#202223', subdued: '#6d7175', border: '#e1e3e5',
+  bg: '#f9fafb', surface: '#ffffff',
+  success: '#16a34a', warning: '#f59e0b', danger: '#dc2626', info: '#2563eb',
+};
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Replace {{token}} (escaped) and {{{token}}} (raw HTML) placeholders.
+// Triple-stache is for tokens that are themselves rendered HTML (e.g. a <ul>);
+// the double-stache form is escaped to prevent injection.
+function applyTokens(template, tokens) {
+  if (!template) return '';
+  return String(template)
+    .replace(/{{{\s*([\w.]+)\s*}}}/g, (_m, key) => {
+      if (key in tokens) return String(tokens[key] ?? '');
+      return '';
+    })
+    .replace(/{{\s*([\w.]+)\s*}}/g, (_m, key) => {
+      if (key in tokens) return escapeHtml(tokens[key]);
+      return '';
+    });
+}
+
+const DEFAULT_HEADER_HTML = `
+  <div style="text-align:center;padding-bottom:24px;">
+    <div style="display:inline-block;width:48px;height:48px;border-radius:10px;background:${COLORS.brand};color:#fff;line-height:48px;font-weight:700;font-size:18px;">GC</div>
+    <div style="margin-top:8px;font-size:13px;color:${COLORS.subdued};">Google Console Analytics</div>
+  </div>`;
+
+function layout({ subject, headerHtml, bodyHtml, footerHtml, preheader = '' }) {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:${COLORS.bg};margin:0;padding:0;color:${COLORS.text};">
+  ${preheader ? `<span style="display:none;font-size:1px;color:${COLORS.bg};opacity:0;">${escapeHtml(preheader)}</span>` : ''}
+  <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
+    ${headerHtml && headerHtml.trim() ? headerHtml : DEFAULT_HEADER_HTML}
+    <div style="background:${COLORS.surface};border:1px solid ${COLORS.border};border-radius:12px;padding:32px;font-size:14px;line-height:1.6;">
+      ${bodyHtml || ''}
+    </div>
+    ${footerHtml && footerHtml.trim() ? `<div style="text-align:center;padding:24px 12px;color:#9ca3af;font-size:12px;line-height:1.6;">${footerHtml}</div>` : ''}
+  </div>
+</body></html>`;
+}
+
+// ── Default templates (fallback if no admin row exists for an event) ─────────
+// Subjects and bodies use {{tokens}} that get filled per-send.
+const DEFAULT_TEMPLATES = {
+  welcome: {
+    subject: 'Welcome to Google Console Analytics, {{shop_name}}!',
+    body_html: `
+      <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;">Welcome aboard! 🎉</h1>
+      <p>Thanks for installing <strong>Google Console Analytics</strong> on <strong>{{shop_name}}</strong>. You're 2 minutes away from seeing real Search Console + GA4 + Google Ads data inside your Shopify admin.</p>
+      <h2 style="margin:24px 0 8px;font-size:16px;">Get started in 3 steps:</h2>
+      <ol style="padding-left:20px;line-height:1.9;">
+        <li><strong>Connect Google</strong> — link the account that owns your Search Console and GA4</li>
+        <li><strong>Pick your properties</strong> — we auto-list everything verified on that account</li>
+        <li><strong>Run analysis</strong> on Site Audit and AI Visibility for your first reports</li>
+      </ol>
+      <div style="text-align:center;margin:24px 0 8px;">
+        <a href="{{app_url}}/connect-google" style="display:inline-block;background:${COLORS.brand};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Open the app →</a>
+      </div>`,
+    footer_html: `Need help? Reply to this email — a real human reads it.`,
+  },
+
+  googleConnected: {
+    subject: 'Google connected to {{shop_name}}',
+    body_html: `
+      <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;color:${COLORS.success};">✓ Google account connected</h1>
+      <p>We've linked <strong>{{google_email}}</strong> to <strong>{{shop_name}}</strong>.</p>
+      <p style="color:${COLORS.subdued};">Next: pick which Search Console property and GA4 property to track.</p>
+      <div style="text-align:center;margin:8px 0;">
+        <a href="{{app_url}}/connect-google" style="display:inline-block;background:${COLORS.brand};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Configure properties →</a>
+      </div>`,
+    footer_html: `You're receiving this because you connected Google to your Shopify store.`,
+  },
+
+  subscription: {
+    subject: '{{plan_name}} plan activated for {{shop_name}}',
+    body_html: `
+      <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;">✓ {{plan_name}} plan is active</h1>
+      <p>You're now on the <strong>{{plan_name}}</strong> plan ({{plan_price}}/month).</p>
+      <p style="color:${COLORS.subdued};">Trial ends: {{trial_ends_at}}</p>
+      <div style="text-align:center;margin:8px 0;">
+        <a href="{{app_url}}/" style="display:inline-block;background:${COLORS.brand};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Open dashboard →</a>
+      </div>`,
+    footer_html: `You can change or cancel your plan anytime from the Plan & Billing page.`,
+  },
+
+  audit: {
+    subject: 'Site Audit complete — score {{score}}/100',
+    body_html: `
+      <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;">Site Audit complete for {{shop_name}}</h1>
+      <p>The crawl finished. Score: <strong>{{score}}/100</strong> across <strong>{{pages_crawled}}</strong> pages.</p>
+      <p>Errors: <strong>{{errors_count}}</strong> &nbsp;·&nbsp; Warnings: <strong>{{warnings_count}}</strong></p>
+      <div style="text-align:center;margin:16px 0 8px;">
+        <a href="{{app_url}}/site-audit" style="display:inline-block;background:${COLORS.brand};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">See full report →</a>
+      </div>`,
+    footer_html: `Manage email preferences in <a href="{{app_url}}/settings" style="color:#6d7175;">Settings</a>.`,
+  },
+
+  aiVisibility: {
+    subject: 'AI Visibility run complete — score {{score}}/100',
+    body_html: `
+      <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;">AI Visibility report for {{shop_name}}</h1>
+      <p>Score: <strong>{{score}}/100</strong></p>
+      <p>Mentions: <strong>{{mentions}}</strong> &nbsp;·&nbsp; Citations: <strong>{{citations}}</strong> &nbsp;·&nbsp; Cited Pages: <strong>{{cited_pages}}</strong></p>
+      <div style="text-align:center;margin:16px 0 8px;">
+        <a href="{{app_url}}/ai-visibility" style="display:inline-block;background:${COLORS.brand};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">View full breakdown →</a>
+      </div>`,
+    footer_html: `Manage email preferences in <a href="{{app_url}}/settings" style="color:#6d7175;">Settings</a>.`,
+  },
+
+  stockAlerts: {
+    subject: '⚠️ {{product_title}} is out of stock — {{monthly_clicks}} clicks/month',
+    body_html: `
+      <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;color:${COLORS.danger};">⚠️ Critical stock alert</h1>
+      <p>A high-traffic product on <strong>{{shop_name}}</strong> just went out of stock.</p>
+      <div style="background:#fff5f5;border-left:4px solid ${COLORS.danger};padding:16px;border-radius:6px;margin:20px 0;">
+        <div style="font-weight:600;font-size:15px;">{{product_title}}</div>
+        <div style="font-size:13px;color:${COLORS.subdued};margin:4px 0 10px;">{{variant_title}} · SKU {{sku}}</div>
+        <div style="font-size:13px;"><strong>{{monthly_clicks}}</strong> clicks/month from Google · <strong>{{inventory}}</strong> units left</div>
+      </div>
+      <div style="text-align:center;margin:8px 0;">
+        <a href="{{app_url}}/insights" style="display:inline-block;background:${COLORS.danger};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Restock now →</a>
+      </div>`,
+    footer_html: `Manage email preferences in <a href="{{app_url}}/settings" style="color:#6d7175;">Settings</a>.`,
+  },
+
+  weeklyReport: {
+    subject: 'Weekly report — {{shop_name}}',
+    body_html: `
+      <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;">This week on {{shop_name}}</h1>
+      <p>Your weekly performance digest is ready inside the app.</p>
+      <div style="text-align:center;margin:16px 0 8px;">
+        <a href="{{app_url}}/" style="display:inline-block;background:${COLORS.brand};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Open dashboard →</a>
+      </div>`,
+    footer_html: `Change which day this lands in your inbox in <a href="{{app_url}}/settings" style="color:#6d7175;">Settings → Notifications</a>.`,
+  },
+};
+
+// Sample plan-context tokens used for previews (so the admin sees something
+// rendered instead of empty bullets when previewing).
+const SAMPLE_PLAN = {
+  plan_name: 'Growth',
+  plan_price: '$19.99',
+  trial_ends_at: 'May 12, 2026',
+  plan_features: '<ul style="margin:8px 0;padding-left:20px;line-height:1.7;"><li>Site Audit</li><li>AI Visibility</li><li>Stock alerts</li><li>Weekly reports</li></ul>',
+  plan_usage: '<ul style="margin:8px 0;padding-left:20px;line-height:1.7;"><li>Site Audits this month: <strong>3 / 10</strong></li><li>AI Visibility runs this month: <strong>2 / 5</strong></li><li>Products tracked: <strong>45 / 100</strong></li></ul>',
+};
+
+// All events the system can send, plus metadata for the admin UI.
+// `availableTokens` lists every variable the admin may reference in their
+// header/body/footer for that event — shown as chips in the editor UI.
+const COMMON_TOKENS = ['shop_name', 'plan_name', 'plan_price', 'plan_features', 'plan_usage', 'app_url'];
+const EVENT_META = {
+  welcome:         { label: 'Welcome Email',                  description: 'Sent when a shop installs the app.',                       adminOnly: true,  availableTokens: [...COMMON_TOKENS], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', app_url: APP_URL } },
+  googleConnected: { label: 'Google Connected Email',         description: 'Sent after a shop connects their Google account.',          adminOnly: true,  availableTokens: [...COMMON_TOKENS, 'google_email'], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', google_email: 'owner@example.com', app_url: APP_URL } },
+  subscription:    { label: 'Subscription Update Email',      description: 'Sent on trial start / paid plan activation.',               adminOnly: true,  availableTokens: [...COMMON_TOKENS, 'trial_ends_at'], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', app_url: APP_URL } },
+  audit:           { label: 'Site Audit Complete Email',      description: 'Sent when a Site Audit run finishes.',                      adminOnly: false, availableTokens: [...COMMON_TOKENS, 'score', 'pages_crawled', 'errors_count', 'warnings_count'], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', score: 72, pages_crawled: 45, errors_count: 3, warnings_count: 8, app_url: APP_URL } },
+  aiVisibility:    { label: 'AI Visibility Complete Email',   description: 'Sent when an AI Visibility analysis finishes.',             adminOnly: false, availableTokens: [...COMMON_TOKENS, 'score', 'mentions', 'citations', 'cited_pages'], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', score: 55, mentions: 18, citations: 4, cited_pages: 2, app_url: APP_URL } },
+  stockAlerts:     { label: 'Stock Alert Email',              description: 'Sent when a high-traffic product goes out of stock.',       adminOnly: false, availableTokens: [...COMMON_TOKENS, 'product_title', 'variant_title', 'sku', 'inventory', 'monthly_clicks'], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', product_title: 'Blue Widget', variant_title: 'Large', sku: 'BW-L', inventory: 0, monthly_clicks: 240, app_url: APP_URL } },
+  weeklyReport:    { label: 'Weekly Report Email',            description: 'Weekly summary sent on the merchant\'s chosen day.',        adminOnly: false, availableTokens: [...COMMON_TOKENS], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', app_url: APP_URL } },
+};
+const EVENT_KEYS = Object.keys(EVENT_META);
+
+// ── Template loader ─────────────────────────────────────────────────────────
+// Read the admin-edited row if present; otherwise fall back to the baked-in
+// default. The DB row only stores fields the admin actually saved — anything
+// blank merges with the default (so removing the footer in the editor falls
+// back to the default footer rather than dropping the section entirely).
+async function getTemplate(eventKey) {
+  const fallback = DEFAULT_TEMPLATES[eventKey];
+  if (!fallback) throw new Error(`Unknown email event: ${eventKey}`);
+  const row = await EmailTemplate.findOne({ where: { event_key: eventKey } }).catch(() => null);
+  if (!row) return { ...fallback, header_html: '', source: 'default' };
+  return {
+    subject:     row.subject     || fallback.subject,
+    header_html: row.header_html || '',
+    body_html:   row.body_html   || fallback.body_html,
+    footer_html: row.footer_html || fallback.footer_html || '',
+    source: 'db',
+  };
+}
+
+// Render an event into final { subject, html } using DB template + tokens
+async function renderEvent(eventKey, tokens) {
+  const tpl = await getTemplate(eventKey);
+  const fullTokens = { app_url: APP_URL, ...tokens };
+  const subj = applyTokens(tpl.subject, fullTokens);
+  return {
+    subject: subj,
+    html: layout({
+      subject: subj,
+      headerHtml: applyTokens(tpl.header_html, fullTokens),
+      bodyHtml: applyTokens(tpl.body_html, fullTokens),
+      footerHtml: applyTokens(tpl.footer_html, fullTokens),
+    }),
+    source: tpl.source,
+  };
+}
+
+// Build the auto-substituted shop/plan/usage tokens that every send shares.
+// {{shop_name}}, {{plan_name}}, {{plan_price}}, {{trial_ends_at}} are escaped;
+// {{{plan_features}}} and {{{plan_usage}}} are raw HTML (rendered as <ul>).
+async function getShopContext(shop) {
+  const ctx = {
+    shop_name: shop.shop_name || shop.shop_domain || '',
+    shop_domain: shop.shop_domain || '',
+    plan_name: 'Free',
+    plan_price: '$0.00',
+    trial_ends_at: '',
+    plan_features: '',
+    plan_usage: '',
+  };
+  try {
+    const { Subscription, BillingPlan, Audit, AIVisibilityRun, Product } = require('../models');
+    const sub = await Subscription.findOne({
+      where: { shop_id: shop.id },
+      include: [{ model: BillingPlan, as: 'plan' }],
+    });
+    if (sub?.plan) {
+      ctx.plan_name = sub.plan.name;
+      ctx.plan_price = `$${parseFloat(sub.plan.price).toFixed(2)}`;
+      if (sub.trial_ends_at) {
+        ctx.trial_ends_at = new Date(sub.trial_ends_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+      }
+      const features = Array.isArray(sub.plan.features) ? sub.plan.features : [];
+      if (features.length) {
+        ctx.plan_features = `<ul style="margin:8px 0;padding-left:20px;line-height:1.7;">${features.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul>`;
+      }
+
+      const limits = sub.plan.limits || {};
+      const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0);
+      const [audits, aiRuns, products] = await Promise.all([
+        Audit.count({ where: { shop_id: shop.id, created_at: { [Op.gte]: startOfMonth } } }).catch(() => 0),
+        AIVisibilityRun.count({ where: { shop_id: shop.id, created_at: { [Op.gte]: startOfMonth } } }).catch(() => 0),
+        Product.count({ where: { shop_id: shop.id } }).catch(() => 0),
+      ]);
+      const rows = [];
+      rows.push(`Site Audits this month: <strong>${audits}${limits.audits != null ? ` / ${limits.audits}` : ''}</strong>`);
+      rows.push(`AI Visibility runs this month: <strong>${aiRuns}${limits.ai_visibility_runs != null ? ` / ${limits.ai_visibility_runs}` : ''}</strong>`);
+      rows.push(`Products tracked: <strong>${products}${limits.products != null ? ` / ${limits.products}` : ''}</strong>`);
+      ctx.plan_usage = `<ul style="margin:8px 0;padding-left:20px;line-height:1.7;">${rows.map(r => `<li>${r}</li>`).join('')}</ul>`;
+    }
+  } catch (err) {
+    console.warn('[Email] getShopContext failed:', err.message);
+  }
+  return ctx;
+}
 
 // ── Core sender ─────────────────────────────────────────────────────────────
 async function sendEmail({ to, subject, html, text }) {
@@ -62,258 +326,7 @@ async function sendEmail({ to, subject, html, text }) {
   }
 }
 
-// ── Shared HTML helpers ─────────────────────────────────────────────────────
-const COLORS = {
-  brand:   '#1a1a1a',
-  text:    '#202223',
-  subdued: '#6d7175',
-  border:  '#e1e3e5',
-  bg:      '#f9fafb',
-  surface: '#ffffff',
-  success: '#16a34a',
-  warning: '#f59e0b',
-  danger:  '#dc2626',
-  info:    '#2563eb',
-};
-
-function btn(label, href, color = COLORS.brand) {
-  return `<a href="${href}" style="display:inline-block;background:${color};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;font-family:inherit;">${label}</a>`;
-}
-
-function layout({ preheader = '', title, body }) {
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:${COLORS.bg};margin:0;padding:0;color:${COLORS.text};">
-  <span style="display:none;font-size:1px;color:${COLORS.bg};opacity:0;">${preheader}</span>
-  <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
-    <div style="text-align:center;padding-bottom:24px;">
-      <div style="display:inline-block;width:48px;height:48px;border-radius:10px;background:${COLORS.brand};color:#fff;line-height:48px;font-weight:700;font-size:18px;">GC</div>
-      <div style="margin-top:8px;font-size:13px;color:${COLORS.subdued};">Google Console Analytics</div>
-    </div>
-    <div style="background:${COLORS.surface};border:1px solid ${COLORS.border};border-radius:12px;padding:32px;">
-      ${body}
-    </div>
-    <div style="text-align:center;padding:24px 12px;color:#9ca3af;font-size:12px;line-height:1.6;">
-      <div>You're receiving this because you installed Google Console Analytics on your Shopify store.</div>
-      <div style="margin-top:6px;">Manage email preferences in <a href="${APP_URL}/settings" style="color:${COLORS.subdued};">Settings</a></div>
-    </div>
-  </div>
-</body></html>`;
-}
-
-// Each template returns { subject, html }
-function tplWelcome(shop) {
-  const name = shop.shop_name || shop.shop_domain;
-  return {
-    subject: `Welcome to Google Console Analytics, ${name}!`,
-    html: layout({
-      preheader: `Connect Google to start tracking SEO and Analytics for ${name}.`,
-      title: 'Welcome',
-      body: `
-        <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;">Welcome aboard! 🎉</h1>
-        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:${COLORS.text};">
-          Thanks for installing <strong>Google Console Analytics</strong> on <strong>${name}</strong>.
-          You're 2 minutes away from seeing real Search Console + GA4 + Google Ads data inside your Shopify admin.
-        </p>
-        <h2 style="margin:24px 0 8px;font-size:16px;color:${COLORS.text};">Get started in 3 steps:</h2>
-        <ol style="margin:0 0 24px;padding-left:20px;font-size:14px;line-height:1.9;color:${COLORS.text};">
-          <li><strong>Connect Google</strong> — link the Google account that owns your Search Console and GA4 properties</li>
-          <li><strong>Pick your properties</strong> — we auto-list everything verified on that account</li>
-          <li><strong>Hit "Run analysis"</strong> on the Site Audit and AI Visibility pages to see your first reports</li>
-        </ol>
-        <div style="text-align:center;margin:24px 0 8px;">
-          ${btn('Open the app →', `${APP_URL}/connect-google`)}
-        </div>
-        <p style="margin:24px 0 0;font-size:13px;color:${COLORS.subdued};">
-          Need help? Reply to this email — a real human reads it.
-        </p>`,
-    }),
-  };
-}
-
-function tplGoogleConnected(shop, googleAccount) {
-  const name = shop.shop_name || shop.shop_domain;
-  return {
-    subject: `Google connected to ${name}`,
-    html: layout({
-      preheader: `${googleAccount.google_email} is now linked. Pick your Search Console + GA4 properties.`,
-      title: 'Google connected',
-      body: `
-        <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;color:${COLORS.success};">✓ Google account connected</h1>
-        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">
-          We've successfully linked <strong>${googleAccount.google_email}</strong> to <strong>${name}</strong>.
-        </p>
-        <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:${COLORS.subdued};">
-          Next step: pick which Search Console property and GA4 property to track.
-        </p>
-        <div style="text-align:center;margin:8px 0;">
-          ${btn('Configure properties →', `${APP_URL}/connect-google`)}
-        </div>`,
-    }),
-  };
-}
-
-function tplSubscriptionActivated(shop, subscription, plan) {
-  const name = shop.shop_name || shop.shop_domain;
-  const isTrial = subscription.status === 'trial';
-  const trialEnd = subscription.trial_ends_at
-    ? new Date(subscription.trial_ends_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
-    : null;
-  return {
-    subject: isTrial
-      ? `Your ${plan.name} trial has started — ${plan.trial_days} days free`
-      : `${plan.name} plan activated for ${name}`,
-    html: layout({
-      preheader: isTrial
-        ? `Free trial ends ${trialEnd}. Cancel anytime.`
-        : `You're now on the ${plan.name} plan.`,
-      title: isTrial ? 'Trial started' : 'Subscription active',
-      body: `
-        <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;">
-          ${isTrial ? `🎉 Your ${plan.trial_days}-day free trial has started` : `✓ ${plan.name} plan is active`}
-        </h1>
-        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">
-          ${isTrial
-            ? `You're on the <strong>${plan.name}</strong> plan with full access to every feature until <strong>${trialEnd}</strong>. After that you'll be charged $${parseFloat(plan.price).toFixed(2)}/month — cancel anytime before then to avoid the charge.`
-            : `You're now on the <strong>${plan.name}</strong> plan ($${parseFloat(plan.price).toFixed(2)}/month).`}
-        </p>
-        <div style="background:${COLORS.bg};border-radius:8px;padding:16px;margin:20px 0;">
-          <div style="font-size:13px;color:${COLORS.subdued};margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">What's included</div>
-          ${(() => { try {
-            const feats = Array.isArray(plan.features) ? plan.features : JSON.parse(plan.features || '[]');
-            return feats.map(f => `<div style="font-size:14px;padding:4px 0;color:${COLORS.text};">✓ ${f}</div>`).join('');
-          } catch { return ''; } })()}
-        </div>
-        <div style="text-align:center;margin:8px 0;">
-          ${btn('Open dashboard →', `${APP_URL}/`)}
-        </div>`,
-    }),
-  };
-}
-
-function tplAuditComplete(shop, audit) {
-  const name = shop.shop_name || shop.shop_domain;
-  const score = audit.score || 0;
-  const tone =
-    score >= 80 ? { color: COLORS.success, label: 'Healthy' } :
-    score >= 60 ? { color: COLORS.warning, label: 'Needs work' } :
-                  { color: COLORS.danger,  label: 'Critical' };
-  return {
-    subject: `Site Audit complete — score ${score}/100`,
-    html: layout({
-      preheader: `${audit.errors_count} errors, ${audit.warnings_count} warnings across ${audit.pages_crawled} pages.`,
-      title: 'Site Audit complete',
-      body: `
-        <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;">Site Audit complete for ${name}</h1>
-        <div style="display:flex;align-items:center;gap:16px;margin:20px 0;padding:20px;background:${COLORS.bg};border-radius:10px;">
-          <div style="width:80px;height:80px;border-radius:50%;background:${tone.color};color:#fff;text-align:center;line-height:80px;font-size:24px;font-weight:700;">${score}</div>
-          <div>
-            <div style="font-size:18px;font-weight:600;color:${tone.color};">${tone.label}</div>
-            <div style="font-size:13px;color:${COLORS.subdued};margin-top:4px;">${audit.pages_crawled} pages crawled</div>
-          </div>
-        </div>
-        <table style="width:100%;border-collapse:collapse;margin:8px 0 20px;">
-          <tr>
-            <td style="padding:10px;background:#fff5f5;border-radius:6px;text-align:center;width:33%;">
-              <div style="font-size:22px;font-weight:700;color:${COLORS.danger};">${audit.errors_count}</div>
-              <div style="font-size:12px;color:${COLORS.subdued};">Errors</div>
-            </td>
-            <td style="width:8px;"></td>
-            <td style="padding:10px;background:#fffbeb;border-radius:6px;text-align:center;width:33%;">
-              <div style="font-size:22px;font-weight:700;color:${COLORS.warning};">${audit.warnings_count}</div>
-              <div style="font-size:12px;color:${COLORS.subdued};">Warnings</div>
-            </td>
-            <td style="width:8px;"></td>
-            <td style="padding:10px;background:${COLORS.bg};border-radius:6px;text-align:center;width:33%;">
-              <div style="font-size:22px;font-weight:700;color:${COLORS.subdued};">${audit.notices_count}</div>
-              <div style="font-size:12px;color:${COLORS.subdued};">Notices</div>
-            </td>
-          </tr>
-        </table>
-        <div style="text-align:center;margin:8px 0;">
-          ${btn('See full report →', `${APP_URL}/site-audit`)}
-        </div>`,
-    }),
-  };
-}
-
-function tplAIVisibilityComplete(shop, run) {
-  const name = shop.shop_name || shop.shop_domain;
-  const score = run.visibility_score || 0;
-  const tone =
-    score >= 70 ? { color: COLORS.success, label: 'Strong' } :
-    score >= 40 ? { color: COLORS.info,    label: 'Medium' } :
-    score >= 20 ? { color: COLORS.warning, label: 'Low'    } :
-                  { color: COLORS.danger,  label: 'Very Low' };
-  return {
-    subject: `AI Visibility run complete — score ${score}/100`,
-    html: layout({
-      preheader: `${run.mentions_total} mentions, ${run.citations_total} citations across configured AI models.`,
-      title: 'AI Visibility complete',
-      body: `
-        <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;">AI Visibility report for ${name}</h1>
-        <div style="display:flex;align-items:center;gap:16px;margin:20px 0;padding:20px;background:${COLORS.bg};border-radius:10px;">
-          <div style="width:80px;height:80px;border-radius:50%;background:${tone.color};color:#fff;text-align:center;line-height:80px;font-size:24px;font-weight:700;">${score}</div>
-          <div>
-            <div style="font-size:18px;font-weight:600;color:${tone.color};">${tone.label}</div>
-            <div style="font-size:13px;color:${COLORS.subdued};margin-top:4px;">across ${(run.providers || []).length} AI ${(run.providers || []).length === 1 ? 'model' : 'models'}</div>
-          </div>
-        </div>
-        <table style="width:100%;border-collapse:collapse;margin:8px 0 20px;">
-          <tr>
-            <td style="padding:10px;background:#eff6ff;border-radius:6px;text-align:center;width:33%;">
-              <div style="font-size:22px;font-weight:700;color:${COLORS.info};">${run.mentions_total || 0}</div>
-              <div style="font-size:12px;color:${COLORS.subdued};">Mentions</div>
-            </td>
-            <td style="width:8px;"></td>
-            <td style="padding:10px;background:#f0fdf4;border-radius:6px;text-align:center;width:33%;">
-              <div style="font-size:22px;font-weight:700;color:${COLORS.success};">${run.citations_total || 0}</div>
-              <div style="font-size:12px;color:${COLORS.subdued};">Citations</div>
-            </td>
-            <td style="width:8px;"></td>
-            <td style="padding:10px;background:#fff7ed;border-radius:6px;text-align:center;width:33%;">
-              <div style="font-size:22px;font-weight:700;color:${COLORS.warning};">${run.cited_pages_total || 0}</div>
-              <div style="font-size:12px;color:${COLORS.subdued};">Cited Pages</div>
-            </td>
-          </tr>
-        </table>
-        <div style="text-align:center;margin:8px 0;">
-          ${btn('View full breakdown →', `${APP_URL}/ai-visibility`)}
-        </div>`,
-    }),
-  };
-}
-
-function tplCriticalStockAlert(shop, alert) {
-  const name = shop.shop_name || shop.shop_domain;
-  return {
-    subject: `⚠️ ${alert.product_title} is out of stock — ${alert.monthly_clicks} clicks/month`,
-    html: layout({
-      preheader: `Critical: a high-traffic product just went out of stock.`,
-      title: 'Stock alert',
-      body: `
-        <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;color:${COLORS.danger};">⚠️ Critical stock alert</h1>
-        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">
-          A product on <strong>${name}</strong> just went out of stock — and it's getting significant Google traffic.
-        </p>
-        <div style="background:#fff5f5;border-left:4px solid ${COLORS.danger};padding:16px;border-radius:6px;margin:20px 0;">
-          <div style="font-weight:600;font-size:15px;margin-bottom:4px;">${alert.product_title}</div>
-          <div style="font-size:13px;color:${COLORS.subdued};margin-bottom:10px;">${alert.variant_title}${alert.sku ? ` · SKU ${alert.sku}` : ''}</div>
-          <div style="font-size:13px;"><strong>${alert.monthly_clicks}</strong> clicks/month from Google · <strong>${Math.max(0, alert.inventory)}</strong> units left</div>
-        </div>
-        <div style="text-align:center;margin:8px 0;">
-          ${btn('Restock now →', `${APP_URL}/insights`, COLORS.danger)}
-        </div>
-        <p style="margin:24px 0 0;font-size:13px;color:${COLORS.subdued};">
-          You're losing potential sales every day this stays out of stock.
-        </p>`,
-    }),
-  };
-}
-
-// Resolve recipient + per-event opt-in by reading shop_settings.
-// Returns { to: string|null, optedIn: boolean }. When the shop has no settings
-// row yet we default to opted-in so install/onboarding emails still go out.
+// Resolve recipient + per-event opt-in. Admin-only events bypass opt-out.
 async function resolveRecipient(shop, eventKey) {
   const settings = await ShopSettings.findOne({
     where: { shop_id: shop.id },
@@ -321,40 +334,67 @@ async function resolveRecipient(shop, eventKey) {
   }).catch(() => null);
 
   const to = settings?.notification_email || shop.email || null;
+  if (ADMIN_ONLY_EVENTS.has(eventKey)) return { to, optedIn: true };
+
   const prefs = settings?.email_prefs || {};
-  // Opt-in by default — toggling OFF must be explicit
-  const optedIn = prefs[eventKey] !== false;
+  const optedIn = prefs[eventKey] !== false; // opt-in by default
   return { to, optedIn };
 }
 
-async function maybeSend(shop, eventKey, tpl) {
+// Public entry: render template + opt-in check + send
+async function dispatch(shop, eventKey, tokens) {
   const { to, optedIn } = await resolveRecipient(shop, eventKey);
   if (!optedIn) {
     console.log(`[Email] "${eventKey}" disabled by shop ${shop.id} — skipping`);
     return { skipped: true, reason: 'opted-out' };
   }
-  return sendEmail({ to, ...tpl });
+  const shopCtx = await getShopContext(shop);
+  const { subject, html, source } = await renderEvent(eventKey, { ...shopCtx, ...tokens });
+  console.log(`[Email] dispatch ${eventKey} (${source}) → ${to}`);
+  return sendEmail({ to, subject, html });
 }
 
 // ── Public facade ────────────────────────────────────────────────────────────
-// Each function uses the per-shop notification_email + email_prefs override.
 async function sendWelcome(shop) {
-  return maybeSend(shop, 'welcome', tplWelcome(shop));
+  return dispatch(shop, 'welcome', {});
 }
 async function sendGoogleConnected(shop, googleAccount) {
-  return maybeSend(shop, 'googleConnected', tplGoogleConnected(shop, googleAccount));
+  return dispatch(shop, 'googleConnected', { google_email: googleAccount.google_email });
 }
 async function sendSubscriptionActivated(shop, subscription, plan) {
-  return maybeSend(shop, 'subscription', tplSubscriptionActivated(shop, subscription, plan));
+  const trialEnd = subscription.trial_ends_at
+    ? new Date(subscription.trial_ends_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+    : '';
+  return dispatch(shop, 'subscription', {
+    plan_name: plan.name,
+    plan_price: `$${parseFloat(plan.price).toFixed(2)}`,
+    trial_ends_at: trialEnd,
+  });
 }
 async function sendAuditComplete(shop, audit) {
-  return maybeSend(shop, 'audit', tplAuditComplete(shop, audit));
+  return dispatch(shop, 'audit', {
+    score: audit.score || 0,
+    pages_crawled: audit.pages_crawled || 0,
+    errors_count: audit.errors_count || 0,
+    warnings_count: audit.warnings_count || 0,
+  });
 }
 async function sendAIVisibilityComplete(shop, run) {
-  return maybeSend(shop, 'aiVisibility', tplAIVisibilityComplete(shop, run));
+  return dispatch(shop, 'aiVisibility', {
+    score: run.visibility_score || 0,
+    mentions: run.mentions_total || 0,
+    citations: run.citations_total || 0,
+    cited_pages: run.cited_pages_total || 0,
+  });
 }
 async function sendCriticalStockAlert(shop, alert) {
-  return maybeSend(shop, 'stockAlerts', tplCriticalStockAlert(shop, alert));
+  return dispatch(shop, 'stockAlerts', {
+    product_title: alert.product_title,
+    variant_title: alert.variant_title,
+    sku: alert.sku || '—',
+    inventory: Math.max(0, alert.inventory || 0),
+    monthly_clicks: alert.monthly_clicks || 0,
+  });
 }
 
 module.exports = {
@@ -365,7 +405,14 @@ module.exports = {
   sendAuditComplete,
   sendAIVisibilityComplete,
   sendCriticalStockAlert,
-  // primitives (rare use)
+  // primitives + admin helpers
   sendEmail,
   smtpConfigured,
+  renderEvent,
+  applyTokens,
+  layout,
+  DEFAULT_TEMPLATES,
+  EVENT_META,
+  EVENT_KEYS,
+  ADMIN_ONLY_EVENTS,
 };

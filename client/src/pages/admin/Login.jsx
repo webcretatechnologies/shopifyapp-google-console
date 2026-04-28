@@ -11,6 +11,8 @@ export default function AdminLogin() {
   const [error, setError] = useState('');
   const { login, loading } = useAuth();
   const navigate = useNavigate();
+  // Set when the API interceptor or PrivateAdminRoute redirected here after a 401
+  const expired = new URLSearchParams(window.location.search).get('expired') === '1';
 
   const handleSubmit = async () => {
     if (!email || !password) { setError('Email and password are required'); return; }
@@ -65,6 +67,12 @@ export default function AdminLogin() {
                 <Text variant="headingMd">Sign in to your account</Text>
                 <Text variant="bodySm" tone="subdued">Enter your admin credentials to continue</Text>
               </BlockStack>
+
+              {expired && !error && (
+                <Banner tone="warning">
+                  <p>Your session has expired. Please sign in again to continue.</p>
+                </Banner>
+              )}
 
               {error && (
                 <Banner tone="critical" onDismiss={() => setError('')}>

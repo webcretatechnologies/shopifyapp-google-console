@@ -104,4 +104,4 @@ function startScheduler() {
   console.log('[Scheduler] Jobs registered');
 }
 
-module.exports = { startScheduler, runDailyFetch };
+module.exports = { startScheduler, runDailyFetch, fetchAndCacheForShop };

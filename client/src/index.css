@@ -1,3 +1,23 @@
+/* Match the Shopify admin chrome's typography. Polaris ships with a generic
+   system-font stack; Shopify admin uses Inter. Loading Inter from Google
+   Fonts (in index.html) and rebinding Polaris's font tokens keeps every
+   button, card, label, etc. visually consistent with the surrounding admin. */
+:root,
+:root .Polaris-Frame,
+:root .Polaris-Page {
+  --p-font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+html,
+body,
+#root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 /* Make every Polaris <Page> stretch to the full viewport width.
    By default Polaris caps Page at ~998px, which leaves big empty side gutters
    inside the Shopify admin frame. We only override the max-width — internal

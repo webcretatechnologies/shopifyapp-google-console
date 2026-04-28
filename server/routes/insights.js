@@ -3,6 +3,8 @@ const router = express.Router();
 const { shopifyAuth } = require('../middleware/shopifyAuth');
 const { getLowStockAlerts, getProductSeoReport, getSeoSuggestions, getAdsOrderCorrelation } = require('../services/insights');
 const { syncAllOrders } = require('../services/orderSync');
+const { fetchAndCacheForShop } = require('../jobs/scheduler');
+const { Shop, AnalyticsCache, GoogleAccount } = require('../models');
 
 router.get('/alerts', shopifyAuth, async (req, res) => {
   try {
@@ -74,6 +76,101 @@ router.post('/sync-orders', shopifyAuth, async (req, res) => {
       });
     }
     res.status(500).json({ error: 'Order sync failed: ' + err.message });
+  }
+});
+
+// Status of cached analytics data — used by the Sync banner / button to show
+// when the daily fetch last ran, what's in cache, and whether the SC property
+// actually overlaps with this store's products.
+router.get('/sync-status', shopifyAuth, async (req, res) => {
+  try {
+    const account = await GoogleAccount.findOne({ where: { shop_id: req.shop.id, is_active: true } });
+    const caches = await AnalyticsCache.findAll({
+      where: { shop_id: req.shop.id },
+      order: [['fetched_at', 'DESC']],
+    });
+
+    // For Search Console: count rows that look like product pages
+    const sc = caches.find(c => c.data_type === 'search_console');
+    let productPageRows = 0, scRows = 0;
+    if (sc?.data?.length) {
+      scRows = sc.data.length;
+      for (const r of sc.data) {
+        if (r.page && /\/products\/[^/?#]+/.test(r.page)) productPageRows++;
+      }
+    }
+
+    res.json({
+      google_connected: !!account,
+      google_email: account?.google_email || null,
+      search_console_property: account?.search_console_property || null,
+      ga4_property_id: account?.ga4_property_id || null,
+      caches: caches.map(c => ({
+        data_type: c.data_type,
+        date_range_start: c.date_range_start,
+        date_range_end: c.date_range_end,
+        rows: Array.isArray(c.data) ? c.data.length : 0,
+        fetched_at: c.fetched_at,
+      })),
+      sc_diagnostic: {
+        total_rows: scRows,
+        product_page_rows: productPageRows,
+        // Heuristic: configured SC property and shop domain disagree
+        property_matches_shop: account?.search_console_property
+          ? (account.search_console_property.includes(req.shop.shop_domain.replace('.myshopify.com', '')) ||
+             req.shop.shop_domain.includes(new URL(account.search_console_property).hostname.replace(/^www\./, '').split('.')[0]))
+          : null,
+      },
+    });
+  } catch (err) {
+    console.error('[Insights] sync-status error:', err.message);
+    res.status(500).json({ error: 'Failed to load sync status' });
+  }
+});
+
+// Manually trigger the same daily fetch the cron normally runs at 02:00 UTC.
+// Useful while testing / when the merchant wants fresh data right now.
+router.post('/sync-now', shopifyAuth, async (req, res) => {
+  try {
+    const account = await GoogleAccount.findOne({ where: { shop_id: req.shop.id, is_active: true } });
+    if (!account) {
+      return res.status(400).json({
+        error: 'google_not_connected',
+        message: 'Connect Google before syncing — open Connect Google in the sidebar.',
+      });
+    }
+    if (!account.search_console_property && !account.ga4_property_id) {
+      return res.status(400).json({
+        error: 'no_property_configured',
+        message: 'Pick a Search Console property and/or a GA4 property in Connect Google before syncing.',
+      });
+    }
+
+    const shop = await Shop.findByPk(req.shop.id);
+    const startedAt = new Date();
+    await fetchAndCacheForShop(shop);
+    const finishedAt = new Date();
+
+    // Re-read cache to report what we ended up with
+    const caches = await AnalyticsCache.findAll({
+      where: { shop_id: req.shop.id },
+      order: [['fetched_at', 'DESC']],
+    });
+    const summary = caches
+      .filter(c => new Date(c.fetched_at) >= startedAt)
+      .map(c => ({ data_type: c.data_type, rows: Array.isArray(c.data) ? c.data.length : 0 }));
+
+    res.json({
+      success: true,
+      duration_ms: finishedAt - startedAt,
+      synced: summary,
+      message: summary.length
+        ? `Synced: ${summary.map(s => `${s.data_type} (${s.rows} rows)`).join(', ')}`
+        : 'Sync ran but no new data was returned by Google',
+    });
+  } catch (err) {
+    console.error('[Insights] sync-now error:', err.message);
+    res.status(500).json({ error: 'Sync failed: ' + err.message });
   }
 });
 

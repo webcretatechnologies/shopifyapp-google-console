@@ -15,6 +15,9 @@ const AuditPage = require('./AuditPage');
 const AIVisibilityRun = require('./AIVisibilityRun');
 const AIVisibilityResult = require('./AIVisibilityResult');
 const AppConfig = require('./AppConfig');
+const ContentDraft = require('./ContentDraft');
+const ProductFaq = require('./ProductFaq');
+const EmailTemplate = require('./EmailTemplate');
 
 Shop.hasOne(GoogleAccount, { foreignKey: 'shop_id', as: 'googleAccount' });
 GoogleAccount.belongsTo(Shop, { foreignKey: 'shop_id' });
@@ -57,4 +60,14 @@ AIVisibilityRun.belongsTo(Shop, { foreignKey: 'shop_id' });
 AIVisibilityRun.hasMany(AIVisibilityResult, { foreignKey: 'run_id', as: 'results', onDelete: 'CASCADE' });
 AIVisibilityResult.belongsTo(AIVisibilityRun, { foreignKey: 'run_id' });
 
-module.exports = { sequelize, Shop, GoogleAccount, AnalyticsCache, Admin, BillingPlan, Subscription, ShopSettings, Product, ProductVariant, Order, Audit, AuditIssue, AuditPage, AIVisibilityRun, AIVisibilityResult, AppConfig };
+Shop.hasMany(ContentDraft, { foreignKey: 'shop_id', as: 'contentDrafts' });
+ContentDraft.belongsTo(Shop, { foreignKey: 'shop_id' });
+Product.hasMany(ContentDraft, { foreignKey: 'product_id', as: 'contentDrafts', onDelete: 'CASCADE' });
+ContentDraft.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+
+Shop.hasMany(ProductFaq, { foreignKey: 'shop_id', as: 'productFaqs' });
+ProductFaq.belongsTo(Shop, { foreignKey: 'shop_id' });
+Product.hasMany(ProductFaq, { foreignKey: 'product_id', as: 'faqs', onDelete: 'CASCADE' });
+ProductFaq.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+
+module.exports = { sequelize, Shop, GoogleAccount, AnalyticsCache, Admin, BillingPlan, Subscription, ShopSettings, Product, ProductVariant, Order, Audit, AuditIssue, AuditPage, AIVisibilityRun, AIVisibilityResult, AppConfig, ContentDraft, ProductFaq, EmailTemplate };

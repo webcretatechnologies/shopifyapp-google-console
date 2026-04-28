@@ -150,8 +150,12 @@ async function bootstrap() {
   try {
     await sequelize.authenticate();
     console.log('Database connected');
-    await sequelize.sync({ alter: true });
-    console.log('Models synchronized');
+    // Schema changes go through `node server/database/migrate.js` (lando ssh
+    // node -c "node server/database/migrate.js"). Calling sync({ alter: true })
+    // on every boot accumulated duplicate UNIQUE indexes until MySQL hit its
+    // 64-key per-table limit and refused all further ALTER TABLE.
+    // Create-if-missing only (no alter) for the email_templates table.
+    await require('./models').EmailTemplate.sync();
     startScheduler();
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   } catch (err) {
