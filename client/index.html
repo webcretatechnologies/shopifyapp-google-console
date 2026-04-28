@@ -3,7 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shopify Analytics</title>
+    <meta name="shopify-api-key" content="%VITE_SHOPIFY_API_KEY%" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <script>
+      // One-time cache flush: bump APP_BUILD_ID whenever you need every browser to drop its cache.
+      (function(){
+        var APP_BUILD_ID = 'v4-2026-04-27-black-buttons';
+        try {
+          var stored = localStorage.getItem('app_build_id');
+          if (stored !== APP_BUILD_ID) {
+            localStorage.setItem('app_build_id', APP_BUILD_ID);
+            // Unregister any service workers
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              navigator.serviceWorker.getRegistrations().then(function(regs){
+                regs.forEach(function(r){ r.unregister(); });
+              }).catch(function(){});
+            }
+            // Clear all Cache Storage entries
+            if (window.caches && caches.keys) {
+              caches.keys().then(function(keys){
+                return Promise.all(keys.map(function(k){ return caches.delete(k); }));
+              }).then(function(){
+                // Force-reload from origin once cleanup is done
+                if (!sessionStorage.getItem('app_build_reloaded')) {
+                  sessionStorage.setItem('app_build_reloaded', '1');
+                  location.reload();
+                }
+              }).catch(function(){});
+            }
+          } else {
+            sessionStorage.removeItem('app_build_reloaded');
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+    <title>Google Analytics — v4</title>
   </head>
   <body>
     <div id="root"></div>

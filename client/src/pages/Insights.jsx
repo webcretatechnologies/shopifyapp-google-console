@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
-  Page, Card, Text, Badge, BlockStack, InlineStack, Box,
+  Page, Card, Text, Badge, BlockStack, InlineStack, InlineGrid, Box,
   Banner, Button, Divider, Spinner, Tabs, EmptyState, Icon, Toast, TextField, Pagination,
 } from '@shopify/polaris';
 import { AlertCircleIcon, SearchIcon, ChartVerticalIcon } from '@shopify/polaris-icons';
@@ -352,7 +352,7 @@ function AdsCorrelationTab() {
       )}
 
       {summary && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
           {[
             { label: 'Total Orders (30d)', value: summary.total_orders },
             { label: 'Google Ads Orders', value: summary.google_ads_orders },
@@ -368,7 +368,7 @@ function AdsCorrelationTab() {
               </Box>
             </Card>
           ))}
-        </div>
+        </InlineGrid>
       )}
 
       {campaigns.length > 0 && (

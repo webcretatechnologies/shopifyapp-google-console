@@ -1,10 +1,12 @@
 #!/bin/bash
-# Cloudflare quick tunnel for Shopify app development
-# Starts tunnel, auto-updates .env, restarts Lando node service
+# Cloudflare NAMED tunnel for Shopify app
+# Permanent URL: https://analytics.boxtasks.com  ->  http://localhost:3000
 # Usage: ./start-tunnel.sh
 
-ENV_FILE="$(dirname "$0")/.env"
-LOGFILE="/tmp/cloudflared-shopify.log"
+set -e
+
+TUNNEL_URL="https://analytics.boxtasks.com"
+TUNNEL_TOKEN="eyJhIjoiZjFiZWYwOWEyYTI4ZjZmN2I5ODhiYzU1MzY3YmM3YTAiLCJ0IjoiY2QzNGFmMDAtZTZmOS00OWRjLWIzMjAtMzc0MzcwZGVhMDJiIiwicyI6Ik1EZ3lZekUxWmpNdE9EWm1aUzAwTWpJeExUa3hZVEV0TTJaaVpqVTFPVEpoT1RkbSJ9"
 
 # ── Check cloudflared ─────────────────────────────────────────────────────────
 if ! command -v cloudflared &>/dev/null; then
@@ -16,93 +18,24 @@ if ! command -v cloudflared &>/dev/null; then
 fi
 
 echo ""
-echo "Starting Cloudflare tunnel -> http://localhost:3000 ..."
-rm -f "$LOGFILE"
-cloudflared tunnel --url http://localhost:3000 >"$LOGFILE" 2>&1 &
-CF_PID=$!
-
-# ── Wait for tunnel URL (up to 60s) ──────────────────────────────────────────
-TUNNEL_URL=""
-printf "Waiting for tunnel URL"
-for i in $(seq 1 30); do
-  TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$LOGFILE" 2>/dev/null | head -1)
-  [ -n "$TUNNEL_URL" ] && break
-  printf "."
-  sleep 2
-done
-echo ""
-
-if [ -z "$TUNNEL_URL" ]; then
-  echo ""
-  echo "ERROR: Could not detect tunnel URL after 60s."
-  echo "Check $LOGFILE for details."
-  kill "$CF_PID" 2>/dev/null
-  exit 1
-fi
-
-echo ""
-echo "Tunnel URL: $TUNNEL_URL"
-echo ""
-
-# ── Update .env ───────────────────────────────────────────────────────────────
-if [ -f "$ENV_FILE" ]; then
-  sed -i '' "s|^APP_URL=.*|APP_URL=$TUNNEL_URL|"                                           "$ENV_FILE"
-  sed -i '' "s|^SHOPIFY_HOST=.*|SHOPIFY_HOST=$TUNNEL_URL|"                                 "$ENV_FILE"
-  sed -i '' "s|^GOOGLE_REDIRECT_URI=.*|GOOGLE_REDIRECT_URI=$TUNNEL_URL/api/google/callback|" "$ENV_FILE"
-  echo ".env updated: APP_URL, SHOPIFY_HOST, GOOGLE_REDIRECT_URI"
-else
-  echo "WARNING: .env not found at $ENV_FILE — update manually."
-fi
-
-# ── Restart Lando node service to pick up new .env ────────────────────────────
-echo ""
-echo "Restarting Lando node service..."
-if command -v lando &>/dev/null; then
-  lando restart -s node 2>/dev/null && echo "Node service restarted." || {
-    echo "lando restart -s node failed, trying full restart..."
-    lando restart
-  }
-else
-  echo "lando not found in PATH — restart manually: lando restart"
-fi
-
-# ── Print action checklist ────────────────────────────────────────────────────
-echo ""
 echo "================================================================"
-echo " REQUIRED: Update these two external services with the new URL"
+echo " Cloudflare Named Tunnel"
+echo "================================================================"
+echo " Public URL : $TUNNEL_URL"
+echo " Local      : http://localhost:3000"
 echo "================================================================"
 echo ""
-echo " [1] SHOPIFY PARTNERS"
-echo "     https://partners.shopify.com"
-echo "     Apps -> your app -> Configuration"
+echo " Make sure the tunnel's Public Hostname in the Cloudflare"
+echo " dashboard is configured to forward to:  http://localhost:3000"
+echo " (or http://host.docker.internal:3000 if running on Linux)"
 echo ""
-echo "     App URL:"
-echo "       $TUNNEL_URL"
-echo ""
-echo "     Allowed redirection URLs:"
-echo "       $TUNNEL_URL/api/auth/callback"
-echo ""
-echo " [2] GOOGLE CLOUD CONSOLE"
-echo "     https://console.cloud.google.com/apis/credentials"
-echo "     Click your OAuth 2.0 Client -> Authorized redirect URIs"
-echo ""
-echo "     Remove the old trycloudflare.com URI and add:"
-echo "       $TUNNEL_URL/api/google/callback"
-echo ""
-echo "================================================================"
-echo " App install URL (for testing):"
+echo " App install URL:"
 echo "   $TUNNEL_URL/api/auth/install?shop=YOUR-STORE.myshopify.com"
 echo ""
 echo " Admin panel:"
 echo "   $TUNNEL_URL/admin"
-echo ""
-echo " phpMyAdmin:"
-echo "   https://pma.shopify-google.lndo.site"
-echo "================================================================"
-echo ""
-echo " Press Ctrl+C to stop the tunnel"
 echo "================================================================"
 echo ""
 
-# ── Keep running until Ctrl+C ─────────────────────────────────────────────────
-wait "$CF_PID"
+# ── Run the named tunnel (foreground, Ctrl+C to stop) ────────────────────────
+exec cloudflared tunnel run --token "$TUNNEL_TOKEN"

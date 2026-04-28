@@ -6,6 +6,7 @@ const { encrypt, decrypt } = require('../services/encryption');
 const { shopifyAuth } = require('../middleware/shopifyAuth');
 const { getSites } = require('../services/googleSearchConsole');
 const { getGA4Properties } = require('../services/googleAnalytics');
+const { sendGoogleConnected } = require('../services/email');
 
 // Helper: load decrypted shop credentials
 async function getShopCredentials(shopId) {
@@ -77,15 +78,23 @@ router.get('/callback', async (req, res) => {
       connected_at: new Date(),
     };
 
+    let isFirstConnection = false;
     if (existing) {
       await existing.update(accountData);
     } else {
       await GoogleAccount.create({ shop_id: shopRecord.id, ...accountData });
+      isFirstConnection = true;
     }
 
     // Mark setup as completed (upsert so it works even if shop has no settings row yet)
     const [shopSettings] = await ShopSettings.findOrCreate({ where: { shop_id: shopRecord.id }, defaults: {} });
     await shopSettings.update({ setup_completed: true, setup_step: 5 });
+
+    // Confirmation email — only on first connection (not on token refresh / reauth)
+    if (isFirstConnection) {
+      sendGoogleConnected(shopRecord, { google_email: userInfo.email })
+        .catch(e => console.error('[Email] google-connected failed:', e.message));
+    }
 
     res.redirect(`${process.env.APP_URL}/connect-google?google_connected=1&shop=${shop}`);
   } catch (err) {

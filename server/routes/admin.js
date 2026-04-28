@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const { Admin, Shop, Subscription, BillingPlan, GoogleAccount } = require('../models');
 const { adminAuth, requireRole } = require('../middleware/adminAuth');
+const { getAllConfigs, setManyConfigs } = require('../services/appConfig');
 const { Op } = require('sequelize');
 
 const JWT_SECRET = process.env.JWT_ADMIN_SECRET || 'admin-secret';
@@ -147,6 +148,33 @@ router.patch('/admins/:id', adminAuth, requireRole('super_admin'), async (req, r
   if (!admin) return res.status(404).json({ error: 'Admin not found' });
   await admin.update(req.body);
   res.json({ success: true });
+});
+
+// ── App config (Live Setup tab) ─────────────────────────────────────────────
+// GET — return every managed key + current value + source ('db' | 'env' | 'unset')
+router.get('/config', adminAuth, requireRole('super_admin'), async (req, res) => {
+  try {
+    const groups = await getAllConfigs();
+    res.json({ groups });
+  } catch (err) {
+    console.error('GET /admin/config:', err);
+    res.status(500).json({ error: 'Failed to load config' });
+  }
+});
+
+// PUT — accept { patch: { KEY: 'value', ... } }. Empty value clears the row.
+router.put('/config', adminAuth, requireRole('super_admin'), async (req, res) => {
+  try {
+    const patch = req.body?.patch;
+    if (!patch || typeof patch !== 'object') {
+      return res.status(400).json({ error: '`patch` object required' });
+    }
+    const results = await setManyConfigs(patch, { adminId: req.admin?.id });
+    res.json({ success: true, results });
+  } catch (err) {
+    console.error('PUT /admin/config:', err);
+    res.status(500).json({ error: err.message || 'Failed to save config' });
+  }
 });
 
 module.exports = router;

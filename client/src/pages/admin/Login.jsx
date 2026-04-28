@@ -43,7 +43,7 @@ export default function AdminLogin() {
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 56, height: 56, borderRadius: 14, background: '#5c6ac4',
+            width: 56, height: 56, borderRadius: 14, background: '#1a1a1a',
             marginBottom: 16, boxShadow: '0 4px 20px rgba(92,106,196,0.4)',
           }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">

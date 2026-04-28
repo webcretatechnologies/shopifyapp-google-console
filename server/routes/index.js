@@ -10,5 +10,7 @@ router.use('/webhooks', require('./webhooks'));
 router.use('/settings', require('./settings'));
 router.use('/products', require('./products'));
 router.use('/insights', require('./insights'));
+router.use('/audit', require('./audit'));
+router.use('/ai-visibility', require('./aiVisibility'));
 
 module.exports = router;

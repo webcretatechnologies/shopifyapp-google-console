@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { Banner, Spinner, Button, Badge, Text, Box } from '@shopify/polaris';
+import { Page, Banner, Spinner, Button, Badge, Text, Box, TextField, Checkbox, InlineStack, BlockStack, Card } from '@shopify/polaris';
 import { analyticsApi, settingsApi } from '../api';
 import { useShop } from '../context/ShopContext';
 import { usePlan } from '../hooks/usePlan';
@@ -215,35 +215,33 @@ export default function SitemapPage() {
         <div style={{ fontSize:13, color:'#6d7175', marginBottom:14 }}>
           Enter your sitemap URL below. For Shopify stores, your sitemap is usually at <code style={{ background:'#f1f2f3', padding:'2px 6px', borderRadius:4 }}>/sitemap.xml</code>
         </div>
-        <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-          <input
-            type="url"
-            placeholder={defaultSitemapUrl || 'https://yourstore.com/sitemap.xml'}
-            value={newUrl}
-            onChange={e => setNewUrl(e.target.value)}
-            style={{ flex:1, minWidth:280, padding:'10px 14px', borderRadius:8, border:'1px solid #c4cdd5', fontSize:14, outline:'none' }}
-            onFocus={e => e.target.style.borderColor='#1a73e8'}
-            onBlur={e => e.target.style.borderColor='#c4cdd5'}
-          />
-          <button
+        <InlineStack gap="200" blockAlign="end" wrap>
+          <Box minWidth="320px">
+            <TextField
+              label="Sitemap URL"
+              labelHidden
+              type="url"
+              placeholder={defaultSitemapUrl || 'https://yourstore.com/sitemap.xml'}
+              value={newUrl}
+              onChange={setNewUrl}
+              autoComplete="off"
+            />
+          </Box>
+          <Button
+            variant="primary"
             onClick={() => { if (newUrl) submitMutation.mutate(newUrl); }}
-            disabled={!newUrl || submitMutation.isLoading}
-            style={{
-              padding:'10px 22px', borderRadius:8, border:'none', cursor: newUrl ? 'pointer' : 'not-allowed',
-              background: newUrl ? '#1a73e8' : '#c4cdd5', color:'#fff', fontSize:14, fontWeight:600,
-              display:'flex', alignItems:'center', gap:8,
-            }}>
-            {submitMutation.isLoading ? <Spinner size="small" /> : '+ Submit Sitemap'}
-          </button>
-        </div>
+            loading={submitMutation.isLoading}
+            disabled={!newUrl}
+          >
+            Submit Sitemap
+          </Button>
+        </InlineStack>
         {hasProperty && (
-          <div style={{ marginTop:10 }}>
-            <button
-              onClick={() => setNewUrl(defaultSitemapUrl)}
-              style={{ fontSize:12, color:'#1a73e8', background:'none', border:'none', cursor:'pointer', padding:0 }}>
+          <Box paddingBlockStart="200">
+            <Button variant="plain" onClick={() => setNewUrl(defaultSitemapUrl)}>
               Use default: {defaultSitemapUrl}
-            </button>
-          </div>
+            </Button>
+          </Box>
         )}
       </SCard>
 
@@ -255,47 +253,40 @@ export default function SitemapPage() {
             When enabled, your sitemap is automatically re-submitted to Google Search Console every day at 2 AM UTC.
             This keeps Google updated whenever your store content changes.
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:16, flexWrap:'wrap' }}>
-            <label style={{ display:'flex', alignItems:'center', gap:10, cursor:'pointer', userSelect:'none' }}>
-              <div
-                onClick={() => setAutoEnabled(v => !v)}
-                style={{
-                  width:44, height:24, borderRadius:12, cursor:'pointer', transition:'all 0.2s',
-                  background: autoEnabled ? '#1a73e8' : '#c4cdd5', position:'relative', flexShrink:0,
-                }}>
-                <div style={{
-                  width:18, height:18, borderRadius:'50%', background:'#fff',
-                  position:'absolute', top:3, left: autoEnabled ? 23 : 3,
-                  transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.2)',
-                }}/>
-              </div>
-              <span style={{ fontSize:14, fontWeight:600, color: autoEnabled ? '#1a73e8' : '#6d7175' }}>
-                {autoEnabled ? 'Auto-Submit Enabled' : 'Auto-Submit Disabled'}
-              </span>
-            </label>
-          </div>
+          <Box paddingBlockEnd="400">
+            <Checkbox
+              label={autoEnabled ? 'Auto-Submit Enabled' : 'Auto-Submit Disabled'}
+              checked={autoEnabled}
+              onChange={setAutoEnabled}
+            />
+          </Box>
           {autoEnabled && (
-            <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap', marginBottom:12 }}>
-              <input
-                type="url"
-                placeholder={defaultSitemapUrl || 'https://yourstore.com/sitemap.xml'}
-                value={autoUrl}
-                onChange={e => setAutoUrl(e.target.value)}
-                style={{ flex:1, minWidth:280, padding:'10px 14px', borderRadius:8, border:'1px solid #c4cdd5', fontSize:14 }}
-              />
-              {hasProperty && !autoUrl && (
-                <button onClick={() => setAutoUrl(defaultSitemapUrl)} style={{ fontSize:12, color:'#1a73e8', background:'none', border:'none', cursor:'pointer', padding:0, whiteSpace:'nowrap' }}>
-                  Use default
-                </button>
-              )}
-            </div>
+            <Box paddingBlockEnd="300">
+              <InlineStack gap="200" blockAlign="end" wrap>
+                <Box minWidth="320px">
+                  <TextField
+                    label="Auto-submit URL"
+                    labelHidden
+                    type="url"
+                    placeholder={defaultSitemapUrl || 'https://yourstore.com/sitemap.xml'}
+                    value={autoUrl}
+                    onChange={setAutoUrl}
+                    autoComplete="off"
+                  />
+                </Box>
+                {hasProperty && !autoUrl && (
+                  <Button variant="plain" onClick={() => setAutoUrl(defaultSitemapUrl)}>Use default</Button>
+                )}
+              </InlineStack>
+            </Box>
           )}
-          <button
+          <Button
+            variant="primary"
             onClick={() => autoSaveMutation.mutate({ auto_sitemap_enabled: autoEnabled, auto_sitemap_url: autoUrl })}
-            disabled={autoSaveMutation.isLoading}
-            style={{ padding:'10px 22px', borderRadius:8, border:'none', cursor:'pointer', background:'#1a73e8', color:'#fff', fontSize:14, fontWeight:600 }}>
-            {autoSaveMutation.isLoading ? 'Saving…' : 'Save Auto-Submit Settings'}
-          </button>
+            loading={autoSaveMutation.isLoading}
+          >
+            Save Auto-Submit Settings
+          </Button>
         </SCard>
       ) : (
         <PlanGate feature="autoSitemap" required="growth">
@@ -309,12 +300,8 @@ export default function SitemapPage() {
       {/* Submission History */}
       <div style={{ background:'#fff', border:'1px solid #e1e3e5', borderRadius:12, overflow:'hidden', marginBottom:20 }}>
         <div style={{ padding:'14px 20px', borderBottom:'1px solid #e1e3e5', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <span style={{ fontWeight:600, fontSize:15, color:'#202223' }}>Submission History</span>
-          <button
-            onClick={() => refetch()}
-            style={{ fontSize:13, color:'#1a73e8', background:'none', border:'none', cursor:'pointer', fontWeight:500 }}>
-            ↻ Refresh
-          </button>
+          <Text variant="headingMd" as="h3" fontWeight="semibold">Submission History</Text>
+          <Button variant="plain" onClick={() => refetch()}>↻ Refresh</Button>
         </div>
 
         {deleteMsg && (
@@ -387,12 +374,13 @@ export default function SitemapPage() {
                       <td style={{ ...tdS, fontSize:12, color:'#6d7175' }}>{fmtDate(s.lastSubmitted)}</td>
                       <td style={{ ...tdS, fontSize:12, color:'#6d7175' }}>{fmtDate(s.lastDownloaded)}</td>
                       <td style={{ ...tdS, textAlign:'center' }}>
-                        <button
+                        <Button
+                          tone="critical"
+                          variant="secondary"
+                          size="slim"
+                          loading={deleting === s.path}
                           onClick={() => { setDeleting(s.path); deleteMutation.mutate(s.path); }}
-                          disabled={deleting === s.path}
-                          style={{ padding:'5px 12px', borderRadius:6, border:'1px solid #de3618', background:'#fff', color:'#de3618', fontSize:12, cursor:'pointer', fontWeight:500 }}>
-                          {deleting === s.path ? '…' : 'Remove'}
-                        </button>
+                        >Remove</Button>
                       </td>
                     </tr>
                   );
@@ -408,7 +396,7 @@ export default function SitemapPage() {
         <div style={{ display:'flex', gap:14, flexWrap:'wrap' }}>
           {[
             { label:'Total Sitemaps',    value: sitemaps.length,                                       color:'#1a73e8' },
-            { label:'Total URLs Submitted', value: fmt(sitemaps.reduce((a,s)=>a+s.submitted,0)),      color:'#5c6ac4' },
+            { label:'Total URLs Submitted', value: fmt(sitemaps.reduce((a,s)=>a+s.submitted,0)),      color:'#1a1a1a' },
             { label:'Total URLs Indexed',   value: fmt(sitemaps.reduce((a,s)=>a+s.indexed,0)),        color:'#137333' },
             { label:'Sitemaps with Errors', value: sitemaps.filter(s=>s.errors>0).length,             color:'#de3618' },
           ].map(({ label, value, color }) => (

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   Page, Card, Button, Banner, Text, BlockStack, InlineStack,
-  Badge, Box, Divider, SkeletonBodyText, Select,
+  Badge, Box, Divider, SkeletonBodyText, Select, TextField,
 } from '@shopify/polaris';
 import { googleApi } from '../api';
 import { useShop } from '../context/ShopContext';
@@ -165,25 +165,16 @@ export default function ConnectGoogle() {
                   Enter the Google account email you want to connect, then click the button to sign in.
                 </Text>
 
-                <BlockStack gap="100">
-                  <Text variant="bodyMd" fontWeight="semibold">
-                    Google Account Email <span style={{ color: '#d82c0d' }}>*</span>
-                  </Text>
-                  <input
-                    type="email"
-                    value={loginEmail}
-                    onChange={e => setLoginEmail(e.target.value)}
-                    placeholder="e.g. owner@gmail.com"
-                    style={{
-                      width: '100%', padding: '8px 12px', borderRadius: 8,
-                      border: '1px solid #c4cdd5', fontSize: 14, background: '#fff',
-                      color: '#202223', boxSizing: 'border-box',
-                    }}
-                  />
-                  <Text variant="bodySm" tone="subdued">
-                    Enter the Google account that has access to your Search Console, GA4, and Google Ads. All data will be fetched from this account.
-                  </Text>
-                </BlockStack>
+                <TextField
+                  label="Google Account Email"
+                  type="email"
+                  value={loginEmail}
+                  onChange={setLoginEmail}
+                  placeholder="e.g. owner@gmail.com"
+                  requiredIndicator
+                  helpText="Enter the Google account that has access to your Search Console, GA4, and Google Ads. All data will be fetched from this account."
+                  autoComplete="email"
+                />
 
                 <Button variant="primary" onClick={handleConnect} loading={connecting} disabled={!loginEmail.trim()}>
                   Connect Google Account →
@@ -220,17 +211,13 @@ export default function ConnectGoogle() {
                     <Text variant="bodySm">No Search Console properties found. Make sure your site is verified at search.google.com/search-console.</Text>
                   </Banner>
                 ) : (
-                  <select
+                  <Select
+                    label="Search Console property"
+                    labelHidden
+                    options={scOptions}
                     value={settings.search_console_property}
-                    onChange={e => setSettings(s => ({ ...s, search_console_property: e.target.value }))}
-                    style={{
-                      width: '100%', padding: '8px 12px', borderRadius: 8,
-                      border: '1px solid #c4cdd5', fontSize: 14, background: '#fff',
-                      color: '#202223', cursor: 'pointer',
-                    }}
-                  >
-                    {scOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                    onChange={(v) => setSettings(s => ({ ...s, search_console_property: v }))}
+                  />
                 )}
               </BlockStack>
 
@@ -249,17 +236,13 @@ export default function ConnectGoogle() {
                     <Text variant="bodySm">No GA4 properties found. Make sure Google Analytics Admin API is enabled in your Google Cloud project.</Text>
                   </Banner>
                 ) : (
-                  <select
+                  <Select
+                    label="GA4 property"
+                    labelHidden
+                    options={ga4Options}
                     value={settings.ga4_property_id}
-                    onChange={e => setSettings(s => ({ ...s, ga4_property_id: e.target.value }))}
-                    style={{
-                      width: '100%', padding: '8px 12px', borderRadius: 8,
-                      border: '1px solid #c4cdd5', fontSize: 14, background: '#fff',
-                      color: '#202223', cursor: 'pointer',
-                    }}
-                  >
-                    {ga4Options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                    onChange={(v) => setSettings(s => ({ ...s, ga4_property_id: v }))}
+                  />
                 )}
                 {ga4Props.length > 0 && (
                   <Text variant="bodySm" tone="subdued">
@@ -269,21 +252,14 @@ export default function ConnectGoogle() {
               </BlockStack>
 
               {/* Google Ads Customer ID — manual input (can't list via API easily) */}
-              <BlockStack gap="200">
-                <Text variant="bodyMd" fontWeight="semibold">Google Ads Customer ID <span style={{ fontWeight: 400, color: '#6d7175', fontSize: 13 }}>(optional)</span></Text>
-                <input
-                  type="text"
-                  value={settings.google_ads_customer_id}
-                  onChange={e => setSettings(s => ({ ...s, google_ads_customer_id: e.target.value }))}
-                  placeholder="1234567890"
-                  style={{
-                    width: '100%', padding: '8px 12px', borderRadius: 8,
-                    border: '1px solid #c4cdd5', fontSize: 14, background: '#fff',
-                    color: '#202223', boxSizing: 'border-box',
-                  }}
-                />
-                <Text variant="bodySm" tone="subdued">10-digit number from top-right of your Google Ads account (no dashes)</Text>
-              </BlockStack>
+              <TextField
+                label="Google Ads Customer ID (optional)"
+                value={settings.google_ads_customer_id}
+                onChange={(v) => setSettings(s => ({ ...s, google_ads_customer_id: v }))}
+                placeholder="1234567890"
+                helpText="10-digit number from top-right of your Google Ads account (no dashes)"
+                autoComplete="off"
+              />
 
               <Button
                 variant="primary"

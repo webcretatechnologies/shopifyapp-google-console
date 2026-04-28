@@ -15,7 +15,7 @@ const features = [
   {
     icon: HomeIcon,
     title: 'Dashboard',
-    color: '#5c6ac4',
+    color: '#1a1a1a',
     bg: '#f4f5fa',
     description: 'Overview of your store performance. Shows total sessions, users, and ranked keywords from Google Analytics & Search Console.',
     howTo: 'Connect your Google account first. Once connected, the dashboard auto-refreshes daily with the latest 30-day data.',
@@ -44,7 +44,7 @@ const features = [
   {
     icon: SearchIcon,
     title: 'SEO',
-    color: '#5c6ac4',
+    color: '#1a1a1a',
     bg: '#f4f5fa',
     description: 'Keyword rankings and search traffic from Google Search Console. See which keywords bring traffic to your store.',
     howTo: 'Connect Google → enter your Search Console property URL in API Settings → wait for the daily sync at 2 AM UTC (or reconnect Google to trigger a sync).',

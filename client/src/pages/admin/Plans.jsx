@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   Page, Card, Text, Badge, Button, Modal, FormLayout,
-  TextField, Select, BlockStack, InlineStack, Box, Divider, List, Spinner,
+  TextField, Select, BlockStack, InlineStack, Box, Divider, List, Spinner, Checkbox,
 } from '@shopify/polaris';
 import { adminApi } from '../../api';
 
@@ -80,7 +80,7 @@ function parseFeatures(arr = []) {
 
 // ── Plan card ────────────────────────────────────────────────────────────────
 function PlanCard({ plan, onEdit, onToggle }) {
-  const priceColor = parseFloat(plan.price) === 0 ? '#108043' : '#5c6ac4';
+  const priceColor = parseFloat(plan.price) === 0 ? '#108043' : '#1a1a1a';
   let features = [];
   try { features = Array.isArray(plan.features) ? plan.features : JSON.parse(plan.features || '[]'); } catch {}
 
@@ -124,17 +124,7 @@ function PlanCard({ plan, onEdit, onToggle }) {
 
 // ── Checkbox row ─────────────────────────────────────────────────────────────
 function FeatureCheckbox({ checked, label, onChange }) {
-  return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '5px 0', userSelect: 'none' }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={e => onChange(e.target.checked)}
-        style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#5c6ac4' }}
-      />
-      <span style={{ fontSize: 13, color: '#202223' }}>{label}</span>
-    </label>
-  );
+  return <Checkbox checked={checked} label={label} onChange={onChange} />;
 }
 
 // ── Main page ────────────────────────────────────────────────────────────────
@@ -277,30 +267,25 @@ export default function AdminPlans() {
             <Text variant="headingMd" fontWeight="semibold">Limits</Text>
             <Text variant="bodySm" tone="subdued">Set to 0 for unlimited. Non-zero values are displayed as bullet points and enforced in the app.</Text>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+            <FormLayout.Group condensed>
               {[
-                { key: 'keywords', label: 'Keyword Limit',       placeholder: '0 = unlimited', hint: 'Max keywords tracked via Search Console' },
-                { key: 'products', label: 'Products/month',      placeholder: '0 = unlimited', hint: 'Max products synced per month' },
-                { key: 'orders',   label: 'Orders/month',        placeholder: '0 = unlimited', hint: 'Max orders synced per month' },
+                { key: 'keywords', label: 'Keyword Limit',  placeholder: '0 = unlimited', hint: 'Max keywords tracked via Search Console' },
+                { key: 'products', label: 'Products/month', placeholder: '0 = unlimited', hint: 'Max products synced per month' },
+                { key: 'orders',   label: 'Orders/month',   placeholder: '0 = unlimited', hint: 'Max orders synced per month' },
               ].map(lim => (
-                <div key={lim.key}>
-                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: '#202223' }}>{lim.label}</div>
-                  <input
-                    type="number"
-                    min="0"
-                    value={limits[lim.key]}
-                    onChange={e => setLimit(lim.key)(e.target.value)}
-                    placeholder={lim.placeholder}
-                    style={{
-                      width: '100%', padding: '8px 10px', borderRadius: 6,
-                      border: '1px solid #c4cdd5', fontSize: 13,
-                      color: '#202223', background: '#fff', boxSizing: 'border-box',
-                    }}
-                  />
-                  <div style={{ fontSize: 11, color: '#6d7175', marginTop: 3 }}>{lim.hint}</div>
-                </div>
+                <TextField
+                  key={lim.key}
+                  type="number"
+                  min={0}
+                  label={lim.label}
+                  value={String(limits[lim.key] ?? '')}
+                  onChange={(v) => setLimit(lim.key)(v)}
+                  placeholder={lim.placeholder}
+                  helpText={lim.hint}
+                  autoComplete="off"
+                />
               ))}
-            </div>
+            </FormLayout.Group>
           </BlockStack>
         </Modal.Section>
 

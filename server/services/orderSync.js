@@ -49,15 +49,17 @@ async function upsertOrder(shopId, shopifyOrder) {
   });
 }
 
-async function syncAllOrders(shopId, shopDomain, accessToken, daysBack = 30) {
+// `maxOrders` (default 0 = unlimited) caps total upserts; once reached we stop early.
+async function syncAllOrders(shopId, shopDomain, accessToken, daysBack = 30, maxOrders = 0) {
   const since = new Date();
   since.setDate(since.getDate() - daysBack);
   const sinceStr = since.toISOString();
+  const cap = Number.isFinite(maxOrders) && maxOrders > 0 ? maxOrders : 0;
 
   let url = `https://${shopDomain}/admin/api/${API_VERSION}/orders.json?limit=250&status=any&created_at_min=${sinceStr}`;
   let synced = 0;
 
-  while (url) {
+  outer: while (url) {
     let res;
     try {
       res = await axios.get(url, {
@@ -70,15 +72,18 @@ async function syncAllOrders(shopId, shopDomain, accessToken, daysBack = 30) {
     const orders = res.data.orders || [];
     if (!orders.length) break;
 
-    for (const o of orders) await upsertOrder(shopId, o);
-    synced += orders.length;
+    for (const o of orders) {
+      if (cap && synced >= cap) break outer;
+      await upsertOrder(shopId, o);
+      synced++;
+    }
 
     const link = res.headers['link'] || '';
     const next = link.match(/<([^>]+)>;\s*rel="next"/);
     url = next ? next[1] : null;
   }
 
-  console.log(`[OrderSync] Done — ${synced} orders synced for ${shopDomain}`);
+  console.log(`[OrderSync] Done — ${synced} orders synced for ${shopDomain}${cap ? ` (cap ${cap})` : ''}`);
   return synced;
 }
 

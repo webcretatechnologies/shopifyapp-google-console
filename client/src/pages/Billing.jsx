@@ -1,14 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation } from 'react-query';
 import {
-  Page, Layout, Card, Text, Button, Badge, BlockStack,
-  InlineStack, Box, Divider, Spinner, Banner,
+  Page, Layout, Card, Text, Badge, BlockStack,
+  InlineStack, Box, Divider, Spinner, Banner, Button,
 } from '@shopify/polaris';
 import { billingApi } from '../api';
+
+const PLAN_RANK = { starter: 0, growth: 1, pro: 2 };
+
+function planAction(plan, currentSlug) {
+  if (plan.slug === currentSlug) return { label: 'Current Plan', kind: 'current' };
+  const isFree = parseFloat(plan.price) === 0;
+  if (!currentSlug || currentSlug === 'starter') {
+    return {
+      label: isFree ? 'Start for Free' : `Start ${plan.trial_days > 0 ? 'Free Trial' : 'Plan'}`,
+      kind: 'subscribe',
+    };
+  }
+  const currentRank = PLAN_RANK[currentSlug] ?? 0;
+  const targetRank = PLAN_RANK[plan.slug] ?? 0;
+  if (targetRank > currentRank) return { label: `Upgrade to ${plan.name}`, kind: 'upgrade' };
+  return { label: `Downgrade to ${plan.name}`, kind: 'downgrade' };
+}
+
+// Map our action kinds → Polaris Button variants
+const actionVariant = {
+  current:   'secondary',  // disabled
+  subscribe: 'primary',
+  upgrade:   'primary',
+  downgrade: 'secondary',
+};
 
 function PlanCard({ plan, currentSub, onSelect, loading }) {
   const isCurrent = currentSub?.plan?.slug === plan.slug;
   const isFree = parseFloat(plan.price) === 0;
+  const action = planAction(plan, currentSub?.plan?.slug);
 
   let features = [];
   try {
@@ -51,13 +77,13 @@ function PlanCard({ plan, currentSub, onSelect, loading }) {
           </BlockStack>
 
           <Button
-            variant={isCurrent ? 'secondary' : 'primary'}
-            disabled={isCurrent}
+            variant={actionVariant[action.kind]}
+            disabled={action.kind === 'current'}
             loading={loading}
-            onClick={() => !isCurrent && onSelect(plan)}
+            onClick={() => action.kind !== 'current' && onSelect(plan, action.kind)}
             fullWidth
           >
-            {isCurrent ? 'Current Plan' : isFree ? 'Start for Free' : `Start ${plan.trial_days > 0 ? 'Free Trial' : 'Plan'}`}
+            {action.label}
           </Button>
         </BlockStack>
       </Box>
@@ -68,13 +94,13 @@ function PlanCard({ plan, currentSub, onSelect, loading }) {
 export default function Billing() {
   const [activating, setActivating] = useState(null);
   const [error, setError] = useState(null);
+  const [confirm, setConfirm] = useState(null);
 
   const { data: plans = [], isLoading: plansLoading } = useQuery(
     'billing-plans',
     billingApi.plans,
   );
-
-  const { data: currentSub, isLoading: subLoading } = useQuery(
+  const { data: currentSub, isLoading: subLoading, refetch: refetchSub } = useQuery(
     'billing-subscription',
     billingApi.subscription,
     { retry: false },
@@ -82,41 +108,40 @@ export default function Billing() {
 
   const hasActive = currentSub && ['active', 'trial'].includes(currentSub.status);
 
-  // Auto-redirect to dashboard if already subscribed
-  useEffect(() => {
-    if (!hasActive) return;
-    const shop = new URLSearchParams(window.location.search).get('shop') || sessionStorage.getItem('shop');
-    const host = new URLSearchParams(window.location.search).get('host') || '';
-    const timer = setTimeout(() => {
-      window.location.href = `/?shop=${shop}&host=${host}`;
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [hasActive]);
-
   const subscribeMutation = useMutation(
     (plan_id) => billingApi.subscribe(plan_id),
     {
       onSuccess: (data) => {
         if (data?.confirmationUrl) {
-          // Paid plan — redirect to Shopify billing confirmation
           window.top.location.href = data.confirmationUrl;
         } else {
-          // Free plan — reload app
-          const shop = new URLSearchParams(window.location.search).get('shop')
-            || sessionStorage.getItem('shop');
-          const host = new URLSearchParams(window.location.search).get('host') || '';
-          window.location.href = `/?shop=${shop}&host=${host}`;
+          refetchSub();
+          setActivating(null);
+          setConfirm(null);
         }
       },
-      onError: (err) => setError(err?.error || 'Failed to activate plan. Please try again.'),
-      onSettled: () => setActivating(null),
+      onError: (err) => {
+        setError(err?.error || 'Failed to update plan. Please try again.');
+        setActivating(null);
+        setConfirm(null);
+      },
     }
   );
 
-  const handleSelect = (plan) => {
+  const handleSelect = (plan, actionKind) => {
     setError(null);
+    if (actionKind === 'downgrade') {
+      setConfirm({ plan, actionKind });
+      return;
+    }
     setActivating(plan.id);
     subscribeMutation.mutate(plan.id);
+  };
+
+  const confirmDowngrade = () => {
+    if (!confirm) return;
+    setActivating(confirm.plan.id);
+    subscribeMutation.mutate(confirm.plan.id);
   };
 
   if (plansLoading || subLoading) {
@@ -129,37 +154,13 @@ export default function Billing() {
     );
   }
 
-  // Already subscribed — show redirect message
-  if (hasActive) {
-    const shop = new URLSearchParams(window.location.search).get('shop') || sessionStorage.getItem('shop');
-    const host = new URLSearchParams(window.location.search).get('host') || '';
-    return (
-      <Page>
-        <Box padding="1600">
-          <BlockStack gap="400" align="center">
-            <InlineStack align="center">
-              <div style={{ textAlign: 'center' }}>
-                <Text variant="headingLg" fontWeight="bold">You're already on the {currentSub.plan?.name} plan</Text>
-                <Box paddingBlockStart="200">
-                  <Text variant="bodySm" tone="subdued">Redirecting to your dashboard...</Text>
-                </Box>
-              </div>
-            </InlineStack>
-            <InlineStack align="center">
-              <Button variant="primary" onClick={() => { window.location.href = `/?shop=${shop}&host=${host}`; }}>
-                Go to Dashboard
-              </Button>
-            </InlineStack>
-          </BlockStack>
-        </Box>
-      </Page>
-    );
-  }
-
   return (
     <Page
-      title="Choose Your Plan"
-      subtitle="Get started free — upgrade anytime. No credit card required for the free plan."
+      title="Plan & Billing"
+      subtitle={hasActive
+        ? `You're currently on the ${currentSub.plan?.name} plan. Upgrade for more features or downgrade anytime.`
+        : 'Get started free — upgrade anytime. No credit card required for the free plan.'
+      }
     >
       <BlockStack gap="500">
         {error && (
@@ -169,10 +170,33 @@ export default function Billing() {
         )}
 
         {hasActive && (
-          <Banner tone="success" title={`You're on the ${currentSub.plan?.name} plan`}>
+          <Banner tone="success" title={`Active: ${currentSub.plan?.name} plan`}>
             <Text variant="bodySm">
               Status: <strong>{currentSub.status}</strong>
               {currentSub.trial_ends_at && ` · Trial ends ${new Date(currentSub.trial_ends_at).toLocaleDateString()}`}
+              {currentSub.current_period_end && ` · Renews ${new Date(currentSub.current_period_end).toLocaleDateString()}`}
+            </Text>
+          </Banner>
+        )}
+
+        {confirm && (
+          <Banner
+            tone="warning"
+            title={`Confirm downgrade to ${confirm.plan.name}?`}
+            action={{
+              content: activating ? 'Processing…' : `Yes, downgrade to ${confirm.plan.name}`,
+              onAction: confirmDowngrade,
+              disabled: !!activating,
+            }}
+            secondaryAction={{
+              content: 'Cancel',
+              onAction: () => setConfirm(null),
+            }}
+            onDismiss={() => setConfirm(null)}
+          >
+            <Text variant="bodySm">
+              Features only available on {currentSub.plan?.name} will be locked. Your existing data is kept,
+              but gated reports, exports, and integrations will show an upgrade prompt until you re-subscribe.
             </Text>
           </Banner>
         )}
