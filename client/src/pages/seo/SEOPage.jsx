@@ -9,6 +9,7 @@ import { analyticsApi, settingsApi } from '../../api';
 import { useShop } from '../../context/ShopContext';
 import { usePlan, downloadCSV } from '../../hooks/usePlan';
 import PlanGate from '../../components/PlanGate';
+import PlanLimitBanner from '../../components/PlanLimitBanner';
 import DateRangeFilter from '../../components/DateRangeFilter';
 
 // ── utils ─────────────────────────────────────────────────────────────────────
@@ -143,7 +144,8 @@ function computeTrend(currentRows, prevRows, keyField, valueField) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function SEOPage() {
   const { googleStatus } = useShop();
-  const { can } = usePlan();
+  const { can, features } = usePlan();
+  const seoKeywordsLimit = features.seoKeywordsLimit || 0;
   const [preset, setPreset]         = useState('28d');
   const [customS, setCustomS]       = useState('');
   const [customE, setCustomE]       = useState('');
@@ -236,7 +238,9 @@ export default function SEOPage() {
 
   // Apply brand filter to queries table
   const brandFilteredQ = brandView==='brand' ? brandQueries : brandView==='nonbrand' ? nonBrandQueries : queries;
-  const filteredQ = querySearch ? brandFilteredQ.filter(q=>q.keyword?.toLowerCase().includes(querySearch.toLowerCase())) : brandFilteredQ;
+  const searchedQ = querySearch ? brandFilteredQ.filter(q=>q.keyword?.toLowerCase().includes(querySearch.toLowerCase())) : brandFilteredQ;
+  // Cap keyword rows by plan limit (0 = unlimited).
+  const filteredQ = seoKeywordsLimit > 0 ? searchedQ.slice(0, seoKeywordsLimit) : searchedQ;
   const filteredP   = pageSearch  ? pages.filter(p=>p.page?.toLowerCase().includes(pageSearch.toLowerCase())) : pages;
 
   // Nav sections
@@ -514,7 +518,14 @@ export default function SEOPage() {
               </div>
             )}
 
-            {perfTab==='queries'   && (lQ ? <LoadSpin/> : <DataTable columns={commonQueryCols} rows={filteredQ} emptyText="No query data. Configure Search Console property first."/>)}
+            {perfTab==='queries' && (
+              <>
+                <div style={{ padding:'0 20px 8px' }}>
+                  <PlanLimitBanner kind="keywords" limit={seoKeywordsLimit} total={searchedQ.length} />
+                </div>
+                {lQ ? <LoadSpin/> : <DataTable columns={commonQueryCols} rows={filteredQ} emptyText="No query data. Configure Search Console property first."/>}
+              </>
+            )}
             {perfTab==='pages'     && (lP ? <LoadSpin/> : <DataTable columns={commonPageCols}  rows={filteredP} emptyText="No page data available."/>)}
             {perfTab==='countries' && (lC ? <LoadSpin/> : <DataTable
               columns={[

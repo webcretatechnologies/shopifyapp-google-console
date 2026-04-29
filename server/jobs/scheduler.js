@@ -1,10 +1,12 @@
 const cron = require('node-cron');
-const { Shop, GoogleAccount, AnalyticsCache, ShopSettings } = require('../models');
+const { Op } = require('sequelize');
+const { Shop, GoogleAccount, AnalyticsCache, ShopSettings, Subscription } = require('../models');
 const { getKeywordRankings } = require('../services/googleSearchConsole');
 const { getSessionsAndUsers } = require('../services/googleAnalytics');
 const { getCampaignPerformance } = require('../services/googleAds');
 const { submitSitemap } = require('../services/googleSearchConsole');
 const { sendWeeklyReportsToAll } = require('../services/emailReports');
+const { sendPlanReminder } = require('../services/email');
 
 function getYesterday() {
   const d = new Date();
@@ -101,7 +103,37 @@ function startScheduler() {
     await sendWeeklyReportsToAll().catch(err => console.error('[Cron] Email reports error:', err.message));
   }, { timezone: 'UTC' });
 
+  // Plan-reminder email — every hour at :05, find shops installed between
+  // 24–25h ago that still have no active/trial subscription and email them
+  // a one-time reminder. The narrow 1-hour install window guarantees we
+  // send exactly once per shop without needing a sent-flag column.
+  cron.schedule('5 * * * *', sendPlanReminders, { timezone: 'UTC' });
+
   console.log('[Scheduler] Jobs registered');
+}
+
+async function sendPlanReminders() {
+  const now = Date.now();
+  const windowStart = new Date(now - 25 * 60 * 60 * 1000); // 25h ago
+  const windowEnd   = new Date(now - 24 * 60 * 60 * 1000); // 24h ago
+  const shops = await Shop.findAll({
+    where: {
+      is_active: true,
+      installed_at: { [Op.gte]: windowStart, [Op.lt]: windowEnd },
+    },
+  });
+  for (const shop of shops) {
+    const sub = await Subscription.findOne({
+      where: { shop_id: shop.id, status: { [Op.in]: ['active', 'trial'] } },
+    });
+    if (sub) continue; // already on a plan
+    try {
+      await sendPlanReminder(shop);
+      console.log(`[Cron] Plan-reminder sent to ${shop.shop_domain}`);
+    } catch (err) {
+      console.error(`[Cron] Plan-reminder failed for ${shop.shop_domain}:`, err.message);
+    }
+  }
 }
 
 module.exports = { startScheduler, runDailyFetch, fetchAndCacheForShop };

@@ -7,6 +7,8 @@ import {
 import { AlertCircleIcon, SearchIcon, ChartVerticalIcon } from '@shopify/polaris-icons';
 import { insightsApi } from '../api';
 import PlanGate from '../components/PlanGate';
+import PlanLimitBanner from '../components/PlanLimitBanner';
+import { usePlan } from '../hooks/usePlan';
 
 function SeverityBadge({ severity }) {
   const map = { critical: 'critical', high: 'warning', medium: 'attention', low: 'info' };
@@ -269,12 +271,21 @@ function AdsCorrelationTab() {
     }
   };
 
+  const { features } = usePlan();
+  const ordersLimit = features.ordersLimit || 0;
+
   if (isLoading) return <Box padding="800" textAlign="center"><Spinner /></Box>;
 
   const totalInDb = data?.total_in_db ?? 0;
   const summary = data?.summary;
   const campaigns = data?.by_campaign || [];
   const products = data?.top_products_from_ads || [];
+
+  // Cap displayed counts to the plan's order limit (DB still has everything).
+  const displayTotalInDb = ordersLimit > 0 ? Math.min(totalInDb, ordersLimit) : totalInDb;
+  const displaySummaryTotal = ordersLimit > 0 && summary?.total_orders
+    ? Math.min(summary.total_orders, ordersLimit)
+    : summary?.total_orders;
 
   return (
     <BlockStack gap="400">
@@ -324,9 +335,11 @@ function AdsCorrelationTab() {
         </Banner>
       )}
 
+      <PlanLimitBanner kind="orders" limit={ordersLimit} total={totalInDb} />
+
       <InlineStack align="space-between" blockAlign="center">
         <Text variant="bodySm" tone="subdued">
-          {totalInDb > 0 ? `${totalInDb} orders in database` : 'No orders synced yet'}
+          {totalInDb > 0 ? `${displayTotalInDb.toLocaleString()} orders in database` : 'No orders synced yet'}
         </Text>
         <Button
           onClick={() => syncMutation.mutate()}
@@ -354,7 +367,7 @@ function AdsCorrelationTab() {
       {summary && (
         <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
           {[
-            { label: 'Total Orders (30d)', value: summary.total_orders },
+            { label: 'Total Orders (30d)', value: displaySummaryTotal ?? summary.total_orders },
             { label: 'Google Ads Orders', value: summary.google_ads_orders },
             { label: 'Ads Revenue', value: `₹${summary.google_ads_revenue?.toFixed(2)}` },
             { label: 'Organic Orders', value: summary.organic_orders },

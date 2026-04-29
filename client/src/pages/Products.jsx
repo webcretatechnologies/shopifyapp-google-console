@@ -7,6 +7,8 @@ import {
 } from '@shopify/polaris';
 import { SearchIcon, ImageIcon } from '@shopify/polaris-icons';
 import { productsApi } from '../api';
+import { usePlan } from '../hooks/usePlan';
+import PlanLimitBanner from '../components/PlanLimitBanner';
 
 // Map our internal status → Polaris Badge tone (matches Shopify admin pills:
 // "Active" = success-green, "Draft" = info-blue, "Archived" = subdued)
@@ -181,6 +183,9 @@ export default function Products() {
   const [status, setStatus] = useState('');
   const [syncMsg, setSyncMsg] = useState(null);
 
+  const { features } = usePlan();
+  const productsLimit = features.productsLimit || 0; // 0 = unlimited
+
   const { data, isLoading } = useQuery(
     ['products', page, search, status],
     () => productsApi.list({ page, limit: 20, search, status }),
@@ -188,6 +193,26 @@ export default function Products() {
   );
 
   const { data: stats } = useQuery('product-stats', productsApi.stats);
+
+  // Cap pagination + visible rows so the user only ever sees the first
+  // `productsLimit` products. The DB still has everything (synced via webhook)
+  // but the UI honours the plan.
+  const dbTotal = data?.total ?? 0;
+  const cappedTotal = productsLimit > 0 ? Math.min(dbTotal, productsLimit) : dbTotal;
+  const cappedPages = productsLimit > 0
+    ? Math.max(1, Math.ceil(cappedTotal / 20))
+    : (data?.pages || 1);
+  const allRows = data?.products || [];
+  // Slice the current page's rows so the very last page doesn't overflow the cap.
+  const visibleRows = (() => {
+    if (productsLimit <= 0) return allRows;
+    const startIdx = (page - 1) * 20;
+    const remaining = productsLimit - startIdx;
+    return remaining <= 0 ? [] : allRows.slice(0, remaining);
+  })();
+  const cappedStatsTotal = productsLimit > 0 && stats?.total
+    ? Math.min(stats.total, productsLimit)
+    : stats?.total;
 
   const syncMutation = useMutation(productsApi.sync, {
     onSuccess: () => {
@@ -222,7 +247,7 @@ export default function Products() {
         {stats && (
           <InlineGrid columns={{ xs: 2, sm: 4 }} gap="400">
             {[
-              { label: 'Total Products', value: stats.total },
+              { label: 'Total Products', value: cappedStatsTotal ?? stats.total },
               { label: 'Active',         value: stats.active },
               { label: 'Draft',          value: stats.draft },
               { label: 'Total Variants', value: stats.variants },
@@ -236,6 +261,8 @@ export default function Products() {
             ))}
           </InlineGrid>
         )}
+
+        <PlanLimitBanner kind="products" limit={productsLimit} total={dbTotal} />
 
         {/* Product list — Shopify-admin-style table */}
         <Card padding="0">
@@ -271,7 +298,7 @@ export default function Products() {
               </div>
               {data?.total != null && (
                 <Text variant="bodySm" as="span" tone="subdued">
-                  {data.total.toLocaleString()} product{data.total !== 1 ? 's' : ''}
+                  {cappedTotal.toLocaleString()} product{cappedTotal !== 1 ? 's' : ''}
                 </Text>
               )}
             </InlineStack>
@@ -302,20 +329,20 @@ export default function Products() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.products.map(p => <ProductRow key={p.id} product={p} />)}
+                    {visibleRows.map(p => <ProductRow key={p.id} product={p} />)}
                   </tbody>
                 </table>
               </div>
-              {data.pages > 1 && (
+              {cappedPages > 1 && (
                 <Box padding="400" borderBlockStartWidth="025" borderColor="border">
                   <InlineStack align="space-between" blockAlign="center">
                     <Text variant="bodySm" as="span" tone="subdued">
-                      Page {page} of {data.pages}
+                      Page {page} of {cappedPages}
                     </Text>
                     <Pagination
                       hasPrevious={page > 1}
                       onPrevious={() => setPage(p => p - 1)}
-                      hasNext={page < data.pages}
+                      hasNext={page < cappedPages}
                       onNext={() => setPage(p => p + 1)}
                     />
                   </InlineStack>

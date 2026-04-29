@@ -15,6 +15,11 @@ const Shop = sequelize.define('Shop', {
   is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
   installed_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
   uninstalled_at: { type: DataTypes.DATE, allowNull: true },
+  // Admin-granted add-on features that unlock specific features beyond the
+  // shop's current plan. Shape: [{ label, amount, granted_at, note }].
+  // The `label` matches a plan-feature label (e.g. 'Site Audit') so it
+  // merges naturally into plan.features for the usePlan() parser.
+  extra_features: { type: DataTypes.JSON, allowNull: true },
 }, {
   tableName: 'shops',
 });

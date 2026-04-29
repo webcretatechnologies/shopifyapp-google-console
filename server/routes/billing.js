@@ -16,6 +16,25 @@ router.get('/subscription', shopifyAuth, async (req, res) => {
     include: [{ association: 'plan' }],
     order: [['created_at', 'DESC']],
   });
+  if (!subscription) return res.json(null);
+
+  // Merge admin-granted extra features into plan.features so the existing
+  // usePlan() substring matcher unlocks them automatically.
+  const extras = Array.isArray(req.shop.extra_features) ? req.shop.extra_features : [];
+  if (extras.length > 0) {
+    const sub = subscription.toJSON();
+    let baseFeatures = [];
+    try {
+      const raw = sub.plan?.features;
+      baseFeatures = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+    } catch {}
+    const have = new Set(baseFeatures.map(s => s.toLowerCase()));
+    for (const ex of extras) {
+      if (ex?.label && !have.has(ex.label.toLowerCase())) baseFeatures.push(ex.label);
+    }
+    if (sub.plan) sub.plan.features = baseFeatures;
+    return res.json(sub);
+  }
   res.json(subscription);
 });
 
@@ -118,6 +137,13 @@ router.get('/confirm', shopifyAuth, async (req, res) => {
   syncShopWithPlanLimits(req.shop.id, `plan-confirm:${plan_id}`).catch(err =>
     console.error('[Billing] Confirm sync error:', err.message)
   );
+  // Bounce back into the Shopify admin so the app re-mounts in its iframe
+  // chrome (host param + session restored). Lands on the dashboard route.
+  const apiKey = process.env.SHOPIFY_API_KEY;
+  const shopHandle = req.shop.shop_domain.replace('.myshopify.com', '');
+  if (apiKey && shopHandle) {
+    return res.redirect(`https://admin.shopify.com/store/${shopHandle}/apps/${apiKey}?billing=success`);
+  }
   res.redirect(`${process.env.APP_URL}?billing=success&shop=${req.shop.shop_domain}`);
 });
 

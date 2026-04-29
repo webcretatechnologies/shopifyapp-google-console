@@ -563,7 +563,12 @@ function buildPageUrl(path, baseUrl) {
 export default function Dashboard() {
   const { googleStatus } = useShop();
   const baseUrl = getBaseUrl(googleStatus?.account?.search_console_property);
-  const { can, planName, isStarter } = usePlan();
+  const { can, planName } = usePlan();
+  // Render the Advanced view only when the plan explicitly grants it.
+  // Otherwise fall back to the Basic (Starter-style) overview — even on
+  // higher tiers, if the admin enabled only Basic Dashboard.
+  const showAdvancedDashboard = can('advDashboard');
+  const showBasicOnly = !showAdvancedDashboard && can('basicDashboard');
   const [period, setPeriod]     = useState('28d');
   const [mainTab, setMainTab]   = useState(0);
 
@@ -588,8 +593,12 @@ export default function Dashboard() {
     >
       <BlockStack gap="500">
 
-        {isStarter ? (
+        {showBasicOnly ? (
           <StarterOverview />
+        ) : !showAdvancedDashboard ? (
+          <Banner tone="warning" title="Dashboard not enabled on your plan">
+            <p>Your plan doesn't include any dashboard tier. Ask the admin to enable Basic or Advanced Dashboard.</p>
+          </Banner>
         ) : (
           <>
             {/* Top filter bar — minimal Shopify-admin style: just the date button, no card wrapper */}
