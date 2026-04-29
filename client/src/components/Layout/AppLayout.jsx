@@ -1,10 +1,45 @@
 import React from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { NavMenu } from '@shopify/app-bridge-react';
+import {
+  HomeIcon, CreditCardIcon, QuestionCircleIcon, SettingsIcon,
+} from '@shopify/polaris-icons';
 import { useShop } from '../../context/ShopContext';
+
+const QUICK_LINKS = [
+  { path: '/setup-guide', label: 'Google Setup',  icon: HomeIcon },
+  { path: '/billing',     label: 'Plan & Billing', icon: CreditCardIcon },
+  { path: '/help',        label: 'Help & Guide',   icon: QuestionCircleIcon },
+  { path: '/settings',    label: 'Settings',       icon: SettingsIcon },
+];
+
+function QuickLinkButton({ to, label, icon: Icon, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+        font: 'inherit', fontSize: 13, fontWeight: 500,
+        color: active ? '#fff' : 'var(--p-color-text)',
+        background: active ? 'var(--p-color-bg-fill-brand)' : 'var(--p-color-bg-surface)',
+        border: '1px solid ' + (active ? 'var(--p-color-bg-fill-brand)' : 'var(--p-color-border)'),
+        transition: 'background 120ms, color 120ms, border-color 120ms',
+      }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--p-color-bg-surface-hover)'; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'var(--p-color-bg-surface)'; }}
+    >
+      <Icon style={{ width: 14, height: 14, fill: 'currentColor' }} />
+      {label}
+    </button>
+  );
+}
 
 export default function AppLayout() {
   const { googleStatus } = useShop();
+  const navigate = useNavigate();
+  const location = useLocation();
   const qs = window.location.search;
 
   return (
@@ -23,11 +58,25 @@ export default function AppLayout() {
         <a href={`/connect-google${qs}`}>
           {googleStatus?.connected ? 'Connect Google' : 'Connect Google ⚠'}
         </a>
-        <a href={`/settings${qs}`}>Settings</a>
-        <a href={`/setup-guide${qs}`}>Google Setup</a>
-        <a href={`/billing${qs}`}>Plan &amp; Billing</a>
-        <a href={`/help${qs}`}>Help &amp; Guide</a>
       </NavMenu>
+
+      <div style={{
+        display: 'flex', justifyContent: 'flex-end', gap: 8,
+        padding: '12px 20px',
+        borderBottom: '1px solid var(--p-color-border-secondary)',
+        background: 'var(--p-color-bg)',
+      }}>
+        {QUICK_LINKS.map(link => (
+          <QuickLinkButton
+            key={link.path}
+            label={link.label}
+            icon={link.icon}
+            active={location.pathname === link.path}
+            onClick={() => navigate(`${link.path}${qs}`)}
+          />
+        ))}
+      </div>
+
       <div style={{ padding: '20px' }}>
         <Outlet />
       </div>

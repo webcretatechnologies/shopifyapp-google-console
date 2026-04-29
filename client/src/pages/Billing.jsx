@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation } from 'react-query';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { useNavigate } from 'react-router-dom';
 import {
-  Page, Layout, Card, Text, Badge, BlockStack,
-  InlineStack, Box, Divider, Spinner, Banner, Button,
+  Page, Text, Badge, BlockStack,
+  InlineStack, Box, Spinner, Banner, Button,
 } from '@shopify/polaris';
 import { billingApi } from '../api';
+import { useShop } from '../context/ShopContext';
 
 const PLAN_RANK = { starter: 0, growth: 1, pro: 2 };
 
@@ -42,52 +44,85 @@ function PlanCard({ plan, currentSub, onSelect, loading }) {
     features = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
   } catch { features = []; }
 
+  const monthly = parseFloat(plan.price) || 0;
+
   return (
-    <Card>
-      <Box padding="500">
+    <div
+      style={{
+        background: 'var(--p-color-bg-surface)',
+        border: isCurrent
+          ? '2px solid var(--p-color-text)'
+          : '1px solid var(--p-color-border)',
+        borderRadius: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        boxShadow: isCurrent ? '0 1px 0 rgba(0,0,0,0.04)' : 'none',
+      }}
+    >
+      {/* Header / pricing / features */}
+      <div style={{ padding: '20px 20px 24px', flex: 1 }}>
         <BlockStack gap="400">
-          <BlockStack gap="100">
+          <BlockStack gap="200">
             <InlineStack align="space-between" blockAlign="center">
-              <Text variant="headingMd" fontWeight="bold">{plan.name}</Text>
-              {isCurrent && <Badge tone="success">Current</Badge>}
+              <Text variant="bodyLg" fontWeight="medium" as="h3">{plan.name}</Text>
+              {isCurrent && <Badge tone="success">Current plan</Badge>}
             </InlineStack>
+
             <InlineStack gap="100" blockAlign="baseline">
-              <Text variant="headingXl" fontWeight="bold">
-                {isFree ? 'Free' : `$${parseFloat(plan.price).toFixed(2)}`}
-              </Text>
-              {!isFree && <Text variant="bodyMd" tone="subdued">/ month</Text>}
+              <span style={{ fontSize: 32, fontWeight: 700, lineHeight: 1, color: 'var(--p-color-text)' }}>
+                {isFree ? 'Free' : `$${monthly.toFixed(monthly % 1 ? 2 : 0)}`}
+              </span>
+              {!isFree && (
+                <span style={{ fontSize: 14, color: 'var(--p-color-text-secondary)' }}>/ month</span>
+              )}
             </InlineStack>
-            {plan.trial_days > 0 && !isCurrent && (
-              <Text variant="bodySm" tone="success">{plan.trial_days}-day free trial included</Text>
-            )}
+
           </BlockStack>
 
-          <Divider />
-
-          <BlockStack gap="150">
-            {features.map((f, i) => (
-              <InlineStack key={i} gap="150" blockAlign="start">
-                <Text tone="success">✓</Text>
-                <Text variant="bodySm">{f}</Text>
-              </InlineStack>
-            ))}
-            {features.length === 0 && (
-              <Text variant="bodySm" tone="subdued">All core features included</Text>
-            )}
+          {/* Features */}
+          <BlockStack gap="200">
+            <Text variant="bodyMd" fontWeight="semibold" as="h4">Features</Text>
+            <BlockStack gap="100">
+              {features.length === 0 && (
+                <Text variant="bodySm" tone="subdued">All core features included</Text>
+              )}
+              {features.map((f, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <span style={{ color: 'var(--p-color-text)', fontSize: 13, lineHeight: '20px' }}>✓</span>
+                  <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--p-color-text)' }}>{f}</span>
+                </div>
+              ))}
+            </BlockStack>
           </BlockStack>
 
-          <Button
-            variant={actionVariant[action.kind]}
-            disabled={action.kind === 'current'}
-            loading={loading}
-            onClick={() => action.kind !== 'current' && onSelect(plan, action.kind)}
-            fullWidth
-          >
-            {action.label}
-          </Button>
+          {/* CTA — hidden if it's the current plan */}
+          {!isCurrent && (
+            <Button
+              variant={actionVariant[action.kind]}
+              loading={loading}
+              onClick={() => onSelect(plan, action.kind)}
+              fullWidth
+            >
+              {action.label}
+            </Button>
+          )}
         </BlockStack>
-      </Box>
-    </Card>
+      </div>
+
+      {/* Footer */}
+      <div style={{
+        padding: '14px 20px',
+        borderTop: '1px solid var(--p-color-border-secondary)',
+        background: 'var(--p-color-bg-surface-secondary)',
+        borderBottomLeftRadius: 12,
+        borderBottomRightRadius: 12,
+      }}>
+        <span style={{ fontSize: 13, color: 'var(--p-color-text-secondary)' }}>
+          {plan.trial_days > 0 ? `${plan.trial_days}-day free trial` : 'No free trial'}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -95,6 +130,9 @@ export default function Billing() {
   const [activating, setActivating] = useState(null);
   const [error, setError] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { refreshSubscription } = useShop();
 
   const { data: plans = [], isLoading: plansLoading } = useQuery(
     'billing-plans',
@@ -111,14 +149,21 @@ export default function Billing() {
   const subscribeMutation = useMutation(
     (plan_id) => billingApi.subscribe(plan_id),
     {
-      onSuccess: (data) => {
+      onSuccess: async (data) => {
         if (data?.confirmationUrl) {
+          // Paid plan — Shopify needs the user out of the iframe to approve.
           window.top.location.href = data.confirmationUrl;
-        } else {
-          refetchSub();
-          setActivating(null);
-          setConfirm(null);
+          return;
         }
+        // Free / trial plan activated immediately. Refresh both the local
+        // billing query and the global ShopContext so the dashboard renders
+        // against the new plan, then bounce to it.
+        await refetchSub();
+        try { await refreshSubscription(); } catch {}
+        queryClient.invalidateQueries('billing-subscription');
+        setActivating(null);
+        setConfirm(null);
+        navigate('/' + window.location.search);
       },
       onError: (err) => {
         setError(err?.error || 'Failed to update plan. Please try again.');
@@ -201,18 +246,26 @@ export default function Billing() {
           </Banner>
         )}
 
-        <Layout>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(auto-fit, minmax(280px, 1fr))`,
+          gap: 16,
+          alignItems: 'stretch',
+        }}>
           {plans.map(plan => (
-            <Layout.Section key={plan.id} variant="oneThird">
-              <PlanCard
-                plan={plan}
-                currentSub={currentSub}
-                onSelect={handleSelect}
-                loading={activating === plan.id && subscribeMutation.isLoading}
-              />
-            </Layout.Section>
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              currentSub={currentSub}
+              onSelect={handleSelect}
+              loading={activating === plan.id && subscribeMutation.isLoading}
+            />
           ))}
-        </Layout>
+        </div>
+
+        <Text variant="bodySm" tone="subdued" alignment="center">
+          All charges are billed in USD. Recurring charges renew every 30 days.
+        </Text>
       </BlockStack>
     </Page>
   );

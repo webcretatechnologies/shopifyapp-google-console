@@ -1,10 +1,187 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   Page, Card, IndexTable, Text, Badge, Button, TextField,
   Select, InlineStack, Box, Pagination, BlockStack, Spinner,
+  Modal, Checkbox, Banner, Divider,
 } from '@shopify/polaris';
 import { adminApi } from '../../api';
+
+// Feature catalog — keep in sync with admin/Plans.jsx FEATURES list.
+// These are the labels admins can grant as add-ons to any shop.
+const FEATURE_CATALOG = [
+  { label: 'GA4 Analytics',           group: 'Analytics' },
+  { label: 'Google Search Console',    group: 'Analytics' },
+  { label: 'Google Ads Campaigns',     group: 'Analytics' },
+  { label: 'Sitemap Manager',          group: 'Analytics' },
+  { label: 'Basic Dashboard',          group: 'Dashboard' },
+  { label: 'Advanced Dashboard',       group: 'Dashboard' },
+  { label: 'CSV Export',               group: 'Data' },
+  { label: 'Custom Reports',           group: 'Data' },
+  { label: 'Stock Alerts',             group: 'Insights' },
+  { label: 'Product SEO Report',       group: 'Insights' },
+  { label: 'SEO Suggestions',          group: 'Insights' },
+  { label: 'Ads → Orders Attribution', group: 'Insights' },
+  { label: 'Site Audit',               group: 'AI & Site' },
+  { label: 'AI Visibility',            group: 'AI & Site' },
+  { label: 'Content Creation',         group: 'AI & Site' },
+  { label: 'Product FAQs',             group: 'AI & Site' },
+  { label: 'Structured Markup',        group: 'AI & Site' },
+  { label: 'Auto Sitemap Submission',  group: 'SEO Tools' },
+  { label: 'Brand vs Non-Brand Split', group: 'SEO Tools' },
+  { label: 'Priority Support',         group: 'Support' },
+];
+
+function ExtraFeaturesModal({ shopId, open, onClose }) {
+  const queryClient = useQueryClient();
+  const { data: shop, isLoading } = useQuery(
+    ['admin-shop', shopId],
+    () => adminApi.shop(shopId),
+    { enabled: open && !!shopId },
+  );
+
+  const [extras, setExtras] = useState([]); // [{ label, amount, note }]
+
+  useEffect(() => {
+    if (!open) return;
+    setExtras(Array.isArray(shop?.extra_features) ? shop.extra_features : []);
+  }, [shop, open]);
+
+  // Labels already included in the shop's current plan (read-only).
+  let planFeatures = [];
+  try {
+    const raw = shop?.subscription?.plan?.features;
+    planFeatures = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+  } catch {}
+  const planSet = new Set(planFeatures.map(s => s.toLowerCase()));
+
+  const saveMutation = useMutation(
+    () => adminApi.updateShop(shopId, { extra_features: extras }),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('admin-shops');
+        queryClient.invalidateQueries(['admin-shop', shopId]);
+        onClose();
+      },
+    },
+  );
+
+  const toggleExtra = (label, on) => {
+    setExtras(curr => {
+      if (!on) return curr.filter(e => e.label.toLowerCase() !== label.toLowerCase());
+      if (curr.some(e => e.label.toLowerCase() === label.toLowerCase())) return curr;
+      return [...curr, { label, amount: 0, note: '' }];
+    });
+  };
+  const updateExtra = (label, patch) => {
+    setExtras(curr => curr.map(e =>
+      e.label.toLowerCase() === label.toLowerCase() ? { ...e, ...patch } : e,
+    ));
+  };
+
+  const groups = [...new Set(FEATURE_CATALOG.map(f => f.group))];
+
+  const totalExtras = extras.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={shop ? `Manage features — ${shop.shop_domain}` : 'Manage features'}
+      primaryAction={{
+        content: saveMutation.isLoading ? 'Saving…' : 'Save',
+        onAction: () => saveMutation.mutate(),
+        loading: saveMutation.isLoading,
+      }}
+      secondaryActions={[{ content: 'Cancel', onAction: onClose }]}
+      large
+    >
+      <Modal.Section>
+        {isLoading ? (
+          <Box padding="800"><InlineStack align="center"><Spinner /></InlineStack></Box>
+        ) : (
+          <BlockStack gap="400">
+            <Banner tone="info">
+              <Text variant="bodySm" as="p">
+                Plan-included features are checked but locked. Toggle any extras the merchant has paid for —
+                set the amount they were charged. Extras unlock the feature on top of their current plan.
+              </Text>
+            </Banner>
+
+            <Text variant="bodyMd" tone="subdued" as="p">
+              Current plan: <strong>{shop?.subscription?.plan?.name || 'No plan'}</strong>
+              {extras.length > 0 && ` · Extras total: $${totalExtras.toFixed(2)}`}
+            </Text>
+
+            <Divider />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 32px' }}>
+              {groups.map(group => (
+                <div key={group}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 700, color: '#6d7175',
+                    textTransform: 'uppercase', letterSpacing: '0.5px',
+                    marginBottom: 6, marginTop: 8,
+                  }}>
+                    {group}
+                  </div>
+                  {FEATURE_CATALOG.filter(f => f.group === group).map(f => {
+                    const inPlan = planSet.has(f.label.toLowerCase());
+                    const extra = extras.find(e => e.label.toLowerCase() === f.label.toLowerCase());
+                    const isExtra = !!extra;
+                    return (
+                      <div key={f.label} style={{ marginBottom: 6 }}>
+                        <Checkbox
+                          label={
+                            <span>
+                              {f.label}{' '}
+                              {inPlan && <span style={{ fontSize: 11, color: '#6d7175' }}>(in plan)</span>}
+                              {isExtra && !inPlan && <span style={{ fontSize: 11, color: '#108043' }}> · extra</span>}
+                            </span>
+                          }
+                          checked={inPlan || isExtra}
+                          disabled={inPlan}
+                          onChange={(val) => toggleExtra(f.label, val)}
+                        />
+                        {isExtra && !inPlan && (
+                          <div style={{ paddingLeft: 28, marginTop: 4 }}>
+                            <InlineStack gap="200" blockAlign="center">
+                              <div style={{ width: 110 }}>
+                                <TextField
+                                  label="Amount"
+                                  labelHidden
+                                  type="number"
+                                  prefix="$"
+                                  value={String(extra.amount ?? 0)}
+                                  onChange={(v) => updateExtra(f.label, { amount: parseFloat(v) || 0 })}
+                                  autoComplete="off"
+                                />
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <TextField
+                                  label="Note"
+                                  labelHidden
+                                  placeholder="Note (optional)"
+                                  value={extra.note || ''}
+                                  onChange={(v) => updateExtra(f.label, { note: v })}
+                                  autoComplete="off"
+                                />
+                              </div>
+                            </InlineStack>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </BlockStack>
+        )}
+      </Modal.Section>
+    </Modal>
+  );
+}
 
 function statusBadge(isActive) {
   return <Badge tone={isActive ? 'success' : 'critical'}>{isActive ? 'Active' : 'Inactive'}</Badge>;
@@ -24,6 +201,7 @@ export default function AdminShops() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [extrasShopId, setExtrasShopId] = useState(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery(
@@ -118,14 +296,20 @@ export default function AdminShops() {
                     </Text>
                   </IndexTable.Cell>
                   <IndexTable.Cell>
-                    <Button
-                      size="slim"
-                      tone={shop.is_active ? 'critical' : undefined}
-                      onClick={() => toggleMutation.mutate({ id: shop.id, is_active: !shop.is_active })}
-                      loading={toggleMutation.isLoading}
-                    >
-                      {shop.is_active ? 'Deactivate' : 'Activate'}
-                    </Button>
+                    <InlineStack gap="100">
+                      <Button size="slim" onClick={() => setExtrasShopId(shop.id)}>
+                        Features{Array.isArray(shop.extra_features) && shop.extra_features.length > 0
+                          ? ` (+${shop.extra_features.length})` : ''}
+                      </Button>
+                      <Button
+                        size="slim"
+                        tone={shop.is_active ? 'critical' : undefined}
+                        onClick={() => toggleMutation.mutate({ id: shop.id, is_active: !shop.is_active })}
+                        loading={toggleMutation.isLoading}
+                      >
+                        {shop.is_active ? 'Deactivate' : 'Activate'}
+                      </Button>
+                    </InlineStack>
                   </IndexTable.Cell>
                 </IndexTable.Row>
               ))}
@@ -148,6 +332,12 @@ export default function AdminShops() {
           </Box>
         </Card>
       </BlockStack>
+
+      <ExtraFeaturesModal
+        shopId={extrasShopId}
+        open={!!extrasShopId}
+        onClose={() => setExtrasShopId(null)}
+      />
     </Page>
   );
 }

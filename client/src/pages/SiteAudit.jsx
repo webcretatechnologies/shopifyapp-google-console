@@ -7,6 +7,7 @@ import {
 import { RefreshIcon } from '@shopify/polaris-icons';
 import { auditApi } from '../api';
 import { COLORS } from '../theme';
+import PlanGate from '../components/PlanGate';
 
 const SEVERITY_META = {
   error:   { label: 'Errors',   color: '#d72c0d', bg: '#ffebe9', dot: '#d72c0d' },
@@ -651,6 +652,14 @@ function CompareTab() {
 
 // ─── Main page ───────────────────────────────────────────────────────────────
 export default function SiteAudit() {
+  return (
+    <PlanGate feature="siteAudit" required="growth">
+      <SiteAuditInner />
+    </PlanGate>
+  );
+}
+
+function SiteAuditInner() {
   const qc = useQueryClient();
   const [tab, setTab] = useState('overview');
 

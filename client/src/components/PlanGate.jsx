@@ -7,7 +7,7 @@ const PLAN_ORDER = { starter: 0, growth: 1, pro: 2 };
 
 const PLAN_COLOR = {
   growth: { bg: '#f4f5fa', border: '#1a1a1a', badge: '#1a1a1a', label: 'Growth Plan' },
-  pro:    { bg: '#fef7f0', border: '#f49342', badge: '#f49342', label: 'Pro Plan' },
+  pro:    { bg: '#f4f5fa', border: '#1a1a1a', badge: '#1a1a1a', label: 'Pro Plan' },
 };
 
 /**

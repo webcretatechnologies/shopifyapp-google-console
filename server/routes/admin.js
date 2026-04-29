@@ -94,10 +94,26 @@ router.get('/shops/:id', adminAuth, async (req, res) => {
 });
 
 router.patch('/shops/:id', adminAuth, requireRole('super_admin', 'admin'), async (req, res) => {
-  const { is_active } = req.body;
+  const { is_active, extra_features } = req.body;
   const shop = await Shop.findByPk(req.params.id);
   if (!shop) return res.status(404).json({ error: 'Shop not found' });
-  await shop.update({ is_active });
+  const update = {};
+  if (typeof is_active === 'boolean') update.is_active = is_active;
+  if (Array.isArray(extra_features)) {
+    // Sanitize: only accept { label, amount, note } and stamp granted_at.
+    update.extra_features = extra_features
+      .filter(e => e && typeof e.label === 'string' && e.label.trim())
+      .map(e => ({
+        label: e.label.trim(),
+        amount: typeof e.amount === 'number' ? e.amount : (parseFloat(e.amount) || 0),
+        note: typeof e.note === 'string' ? e.note : '',
+        granted_at: e.granted_at || new Date().toISOString(),
+        granted_by: req.admin?.id || null,
+      }));
+  }
+  await shop.update(update);
+  // Some JSON columns need explicit dirty marking after assignment.
+  if (update.extra_features) { shop.changed('extra_features', true); await shop.save(); }
   res.json({ success: true });
 });
 

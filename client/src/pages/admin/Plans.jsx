@@ -20,13 +20,17 @@ const FEATURES = [
   { key: 'productSeoReport',label: 'Product SEO Report',         group: 'Insights' },
   { key: 'seoSuggestions',  label: 'SEO Suggestions',            group: 'Insights' },
   { key: 'adsOrders',       label: 'Ads → Orders Attribution',   group: 'Insights' },
+  { key: 'siteAudit',       label: 'Site Audit',                 group: 'AI & Site' },
+  { key: 'aiVisibility',    label: 'AI Visibility',              group: 'AI & Site' },
+  { key: 'contentCreation', label: 'Content Creation',           group: 'AI & Site' },
+  { key: 'productFaqs',     label: 'Product FAQs',               group: 'AI & Site' },
+  { key: 'structuredMarkup',label: 'Structured Markup',          group: 'AI & Site' },
   { key: 'autoSitemap',     label: 'Auto Sitemap Submission',    group: 'SEO Tools' },
   { key: 'brandSplit',      label: 'Brand vs Non-Brand Split',   group: 'SEO Tools' },
   { key: 'prioritySupport', label: 'Priority Support',           group: 'Support' },
-  { key: 'apiAccess',       label: 'API Access',                 group: 'Support' },
 ];
 
-const GROUPS = ['Analytics', 'Dashboard', 'Insights', 'Data', 'SEO Tools', 'Support'];
+const GROUPS = ['Analytics', 'Dashboard', 'Insights', 'Data', 'AI & Site', 'SEO Tools', 'Support'];
 
 const EMPTY_CHECKED = Object.fromEntries(FEATURES.map(f => [f.key, false]));
 // Ensure sitemapManager parses correctly from features string
@@ -179,7 +183,14 @@ export default function AdminPlans() {
   };
 
   const setF = (key) => (val) => setForm(f => ({ ...f, [key]: val }));
-  const setCheckedKey = (key) => (val) => setChecked(c => ({ ...c, [key]: val }));
+  const setCheckedKey = (key) => (val) => setChecked(c => {
+    const next = { ...c, [key]: val };
+    // Basic and Advanced Dashboard are mutually exclusive — picking one
+    // unchecks the other so a plan only ever ships one dashboard tier.
+    if (val && key === 'basicDashboard') next.advDashboard = false;
+    if (val && key === 'advDashboard')   next.basicDashboard = false;
+    return next;
+  });
   const setLimit = (key) => (val) => setLimits(l => ({ ...l, [key]: val }));
 
   return (

@@ -8,6 +8,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { aiVisibilityApi } from '../api';
+import PlanGate from '../components/PlanGate';
 
 const TABS = [
   { id: 'overview', content: 'Visibility Overview', accessibilityLabel: 'Visibility Overview', panelID: 'overview-panel' },
@@ -536,6 +537,14 @@ function KpiBlock({ label, value, tone }) {
 
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function AIVisibility() {
+  return (
+    <PlanGate feature="aiVisibility" required="pro">
+      <AIVisibilityInner />
+    </PlanGate>
+  );
+}
+
+function AIVisibilityInner() {
   const qc = useQueryClient();
   const [tabIndex, setTabIndex] = useState(0);
 

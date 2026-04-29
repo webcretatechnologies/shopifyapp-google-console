@@ -7,6 +7,7 @@ import {
 } from '@shopify/polaris';
 import { SearchIcon, ImageIcon } from '@shopify/polaris-icons';
 import { productsApi, contentApi, faqsApi, markupApi } from '../api';
+import PlanGate from '../components/PlanGate';
 
 const TABS = [
   { id: 'content',  content: 'Content Creation',   accessibilityLabel: 'Content Creation',   panelID: 'content-panel'  },
@@ -596,9 +597,21 @@ export default function ContentTools() {
         <Layout.Section>
           <Tabs tabs={TABS} selected={tabIndex} onSelect={setTabIndex}>
             <Box paddingBlockStart="400">
-              {TABS[tabIndex].id === 'content' && <ContentTab productId={productId} />}
-              {TABS[tabIndex].id === 'faqs'    && <FaqsTab    productId={productId} />}
-              {TABS[tabIndex].id === 'markup'  && <MarkupTab  productId={productId} />}
+              {TABS[tabIndex].id === 'content' && (
+                <PlanGate feature="contentCreation" required="growth">
+                  <ContentTab productId={productId} />
+                </PlanGate>
+              )}
+              {TABS[tabIndex].id === 'faqs' && (
+                <PlanGate feature="productFaqs" required="growth">
+                  <FaqsTab productId={productId} />
+                </PlanGate>
+              )}
+              {TABS[tabIndex].id === 'markup' && (
+                <PlanGate feature="structuredMarkup" required="pro">
+                  <MarkupTab productId={productId} />
+                </PlanGate>
+              )}
             </Box>
           </Tabs>
         </Layout.Section>
