@@ -7,6 +7,7 @@ const { getCampaignPerformance } = require('../services/googleAds');
 const { submitSitemap } = require('../services/googleSearchConsole');
 const { sendWeeklyReportsToAll } = require('../services/emailReports');
 const { sendPlanReminder } = require('../services/email');
+const { sendDailyBriefingsToAll } = require('../services/dailyBriefing');
 
 function getYesterday() {
   const d = new Date();
@@ -108,6 +109,13 @@ function startScheduler() {
   // a one-time reminder. The narrow 1-hour install window guarantees we
   // send exactly once per shop without needing a sent-flag column.
   cron.schedule('5 * * * *', sendPlanReminders, { timezone: 'UTC' });
+
+  // Daily AI briefing — once a day at 7 AM UTC. Opt-in only (per shop).
+  cron.schedule('0 7 * * *', async () => {
+    console.log('[Cron] Sending daily AI briefings...');
+    const r = await sendDailyBriefingsToAll().catch(err => ({ error: err.message }));
+    console.log('[Cron] Daily briefings:', r);
+  }, { timezone: 'UTC' });
 
   console.log('[Scheduler] Jobs registered');
 }

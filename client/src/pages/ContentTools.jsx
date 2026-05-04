@@ -8,6 +8,7 @@ import {
 import { SearchIcon, ImageIcon } from '@shopify/polaris-icons';
 import { productsApi, contentApi, faqsApi, markupApi } from '../api';
 import PlanGate from '../components/PlanGate';
+import { usePlan } from '../hooks/usePlan';
 
 const TABS = [
   { id: 'content',  content: 'Content Creation',   accessibilityLabel: 'Content Creation',   panelID: 'content-panel'  },
@@ -24,7 +25,7 @@ const KIND_LABEL = {
 
 // ── Shared product picker — searchable Autocomplete with image thumbnails ──
 function ProductPicker({ value, onChange }) {
-  const { data: payload, isLoading } = useQuery('products-list', () => productsApi.list({ limit: 1000 }));
+  const { data: payload, isLoading } = useQuery('products-list', () => productsApi.list({ limit: 10000 }));
   const list = useMemo(() => {
     if (!payload) return [];
     return Array.isArray(payload) ? payload : (payload.products || []);
@@ -572,6 +573,140 @@ https://instagram.com/yourbrand"
 }
 
 // ── Main page ────────────────────────────────────────────────────────────────
+// Combined bulk-generation + brand-voice checker card shown above the
+// product picker. Bulk takes the latest products in the catalog and runs
+// description / meta-tag generation across all of them.
+function BulkAndBrandVoiceCard() {
+  const { can } = usePlan();
+  const canBulk = can('aiBulkContent');
+  const canVoice = can('aiBrandVoice');
+  const { data: payload } = useQuery('products-list', () => productsApi.list({ limit: 10000 }));
+  const allProducts = useMemo(() => (Array.isArray(payload) ? payload : (payload?.products || [])), [payload]);
+
+  const [batchSize, setBatchSize] = useState('20');
+  const [bulkState, setBulkState] = useState(null);
+  const [voiceState, setVoiceState] = useState(null);
+
+  // If neither sub-feature is enabled, hide the entire card.
+  if (!canBulk && !canVoice) return null;
+
+  const runBulk = async () => {
+    const n = Math.max(1, Math.min(100, parseInt(batchSize) || 20));
+    const ids = allProducts.slice(0, n).map(p => p.id);
+    if (!ids.length) { setBulkState({ error: 'No products available' }); return; }
+    setBulkState({ loading: true, total: ids.length });
+    try {
+      const res = await contentApi.bulkGenerate({ product_ids: ids, kinds: ['description', 'meta_title', 'meta_description'] });
+      setBulkState({ result: res });
+    } catch (err) {
+      setBulkState({ error: err?.error || err?.message || 'Bulk generate failed' });
+    }
+  };
+
+  const runVoice = async () => {
+    setVoiceState({ loading: true });
+    try {
+      const res = await contentApi.brandVoice();
+      setVoiceState({ data: res });
+    } catch (err) {
+      setVoiceState({ error: err?.error || err?.message || 'Voice analysis failed' });
+    }
+  };
+
+  return (
+    <Card>
+      <Box padding="400">
+        <BlockStack gap="400">
+          <BlockStack gap="100">
+            <Text variant="headingMd" as="h2">✨ Bulk tools</Text>
+            <Text variant="bodySm" tone="subdued">
+              Generate copy for many products at once or analyze the consistency of your brand voice.
+            </Text>
+          </BlockStack>
+
+          <Divider />
+
+          {canBulk ? (
+          <BlockStack gap="200">
+            <Text variant="bodyMd" fontWeight="semibold">Bulk generate descriptions</Text>
+            <InlineStack gap="200" blockAlign="end">
+              <div style={{ width: 120 }}>
+                <TextField
+                  label="How many"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={batchSize}
+                  onChange={setBatchSize}
+                  autoComplete="off"
+                />
+              </div>
+              <Button variant="primary" onClick={runBulk} loading={bulkState?.loading}>
+                Run on first {batchSize} products
+              </Button>
+              <Text variant="bodySm" tone="subdued">{allProducts.length} synced</Text>
+            </InlineStack>
+            {bulkState?.error && <Banner tone="critical"><p>{bulkState.error}</p></Banner>}
+            {bulkState?.loading && <Text variant="bodySm" tone="subdued">Generating drafts for {bulkState.total} products… (this may take a minute or two)</Text>}
+            {bulkState?.result && (
+              <Banner tone={bulkState.result.failed > 0 ? 'caution' : 'success'}>
+                <p>Generated drafts for {bulkState.result.succeeded}/{bulkState.result.total} products. Open each product below to review and publish.</p>
+              </Banner>
+            )}
+          </BlockStack>
+          ) : (
+            <PlanGate feature="aiBulkContent" required="pro" compact>Bulk generation</PlanGate>
+          )}
+
+          <Divider />
+
+          {canVoice ? (
+          <BlockStack gap="200">
+            <InlineStack align="space-between" blockAlign="center">
+              <Text variant="bodyMd" fontWeight="semibold">Brand-voice consistency check</Text>
+              <Button onClick={runVoice} loading={voiceState?.loading}>
+                {voiceState?.data ? 'Re-analyze' : 'Analyze brand voice'}
+              </Button>
+            </InlineStack>
+            {voiceState?.error && <Banner tone="critical"><p>{voiceState.error}</p></Banner>}
+            {voiceState?.data?.profile && (
+              <Box padding="300" borderRadius="200" borderWidth="025" borderColor="border" background="bg-surface">
+                <BlockStack gap="200">
+                  <Text variant="bodySm"><strong>Tone:</strong> {voiceState.data.profile.tone}</Text>
+                  <Text variant="bodySm"><strong>Style:</strong> {voiceState.data.profile.style}</Text>
+                  {voiceState.data.profile.dos?.length > 0 && (
+                    <BlockStack gap="050">
+                      <Text variant="bodySm" fontWeight="semibold">Do</Text>
+                      {voiceState.data.profile.dos.map((d, i) => <Text key={i} variant="bodySm">✓ {d}</Text>)}
+                    </BlockStack>
+                  )}
+                  {voiceState.data.profile.donts?.length > 0 && (
+                    <BlockStack gap="050">
+                      <Text variant="bodySm" fontWeight="semibold">Don't</Text>
+                      {voiceState.data.profile.donts.map((d, i) => <Text key={i} variant="bodySm">✗ {d}</Text>)}
+                    </BlockStack>
+                  )}
+                  {voiceState.data.mismatches?.length > 0 && (
+                    <Box paddingBlockStart="200">
+                      <Text variant="bodySm" fontWeight="semibold">Products that drift from this voice:</Text>
+                      {voiceState.data.mismatches.map((m, i) => (
+                        <Text key={i} variant="bodySm">• <strong>{m.title}</strong> — {m.reason}</Text>
+                      ))}
+                    </Box>
+                  )}
+                </BlockStack>
+              </Box>
+            )}
+          </BlockStack>
+          ) : (
+            <PlanGate feature="aiBrandVoice" required="pro" compact>Brand-voice analysis</PlanGate>
+          )}
+        </BlockStack>
+      </Box>
+    </Card>
+  );
+}
+
 export default function ContentTools() {
   const [tabIndex, setTabIndex] = useState(0);
   const [productId, setProductId] = useState(null);
@@ -582,6 +717,9 @@ export default function ContentTools() {
       subtitle="AI-generated product copy, FAQs, and JSON-LD structured markup"
     >
       <Layout>
+        <Layout.Section>
+          <BulkAndBrandVoiceCard />
+        </Layout.Section>
         <Layout.Section>
           <Card>
             <BlockStack gap="200">

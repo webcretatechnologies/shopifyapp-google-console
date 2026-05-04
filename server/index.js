@@ -156,6 +156,22 @@ async function bootstrap() {
     // 64-key per-table limit and refused all further ALTER TABLE.
     // Create-if-missing only (no alter) for the email_templates table.
     await require('./models').EmailTemplate.sync();
+
+    // Reset orphaned AI Visibility runs. A server restart kills any in-flight
+    // setImmediate callbacks, leaving DB rows stuck in 'queued'/'running'
+    // forever. Mark them failed on boot so the merchant can start a new run.
+    try {
+      const { Op } = require('sequelize');
+      const { AIVisibilityRun } = require('./models');
+      const [n] = await AIVisibilityRun.update(
+        { status: 'failed', error_message: 'Server restarted — run aborted', completed_at: new Date() },
+        { where: { status: { [Op.in]: ['queued', 'running'] } } },
+      );
+      if (n > 0) console.log(`[Boot] Reset ${n} orphaned AI Visibility run(s) to failed`);
+    } catch (e) {
+      console.error('[Boot] Could not reset orphaned AI runs:', e.message);
+    }
+
     startScheduler();
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   } catch (err) {

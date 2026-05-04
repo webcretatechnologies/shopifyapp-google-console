@@ -237,8 +237,15 @@ async function runVisibility(runId) {
 
     let mentions = 0, citations = 0, completed = 0;
 
+    // Once a provider returns a permanent failure (rate-limit / auth / quota),
+    // we skip it for the rest of the run instead of hammering it 9 more times
+    // and waiting for 9 timeouts. Re-tryable network blips DON'T trigger this.
+    const PERMANENT_FAIL_RE = /quota|billing|insufficient|payment_required|credit balance|out of credit|rate.?limit|429|invalid.api.key|invalid_api_key|unauthor|401|403/i;
+    const skip = new Set();
+
     for (const p of prompts) {
-      const perProvider = await Promise.all(activeProviders.map(async (pid) => {
+      const tryProviders = activeProviders.filter(pid => !skip.has(pid));
+      const perProvider = await Promise.all(tryProviders.map(async (pid) => {
         const provider = PROVIDERS[pid];
         const startedAt = Date.now();
         let text = '', usage = {}, errMsg = null;
@@ -250,6 +257,10 @@ async function runVisibility(runId) {
           errMsg = err.response?.data?.error?.message || err.response?.data?.error || err.message;
           if (typeof errMsg !== 'string') errMsg = JSON.stringify(errMsg).slice(0, 500);
           console.error(`[AIVisibility] ${pid} prompt failed: ${errMsg}`);
+          if (PERMANENT_FAIL_RE.test(errMsg)) {
+            console.warn(`[AIVisibility] ${pid} skipped for the rest of run #${run.id} (permanent failure: rate-limit / auth)`);
+            skip.add(pid);
+          }
         }
 
         const mentionCount = countBrandMentions(text, brandName);
@@ -282,7 +293,9 @@ async function runVisibility(runId) {
         mentions += r.mentionCount;
         citations += r.citationCount;
       }
-      completed += activeProviders.length;
+      // Count attempted providers (not the ones we skipped) toward completion
+      // so the progress indicator advances naturally.
+      completed += tryProviders.length;
       await run.update({ prompts_completed: completed });
     }
 

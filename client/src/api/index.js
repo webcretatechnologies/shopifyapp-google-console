@@ -82,6 +82,7 @@ export const authApi = {
 // Insights API
 export const insightsApi = {
   alerts:        () => api.get('/insights/alerts'),
+  alertsAiReasoning: () => api.post('/insights/alerts/ai-reasoning'),
   productSeo:    () => api.get('/insights/product-seo'),
   seoSuggestions:() => api.get('/insights/seo-suggestions'),
   adsCorrelation:() => api.get('/insights/ads-correlation'),
@@ -103,6 +104,7 @@ export const settingsApi = {
   get: () => api.get('/settings'),
   save: (data) => api.put('/settings', data),
   clearCredentials: () => api.delete('/settings/credentials'),
+  llmStatus: () => api.get('/settings/llm-status'),
 };
 
 // Admin API
@@ -129,6 +131,25 @@ export const adminApi = {
   previewEmailTemplate: (data) => api.post('/admin/email-templates/preview', data),
 };
 
+// SEO AI API
+export const seoAiApi = {
+  quickWins:        () => api.post('/seo-ai/quick-wins'),
+  cannibalization:  () => api.post('/seo-ai/cannibalization'),
+  metaSuggestions:  () => api.post('/seo-ai/meta-suggestions'),
+};
+
+// Analytics AI API
+export const analyticsAiApi = {
+  weeklyDigest:    () => api.post('/analytics-ai/weekly-digest'),
+  anomalies:       () => api.post('/analytics-ai/anomalies'),
+  adsWastedSpend:  () => api.post('/analytics-ai/ads-wasted-spend'),
+};
+
+// AI Chat API
+export const aiChatApi = {
+  send: (messages) => api.post('/ai-chat', { messages }),
+};
+
 // AI Visibility API
 export const aiVisibilityApi = {
   settings:        () => api.get('/ai-visibility/settings'),
@@ -138,12 +159,18 @@ export const aiVisibilityApi = {
   results:         (id) => api.get(`/ai-visibility/runs/${id}/results`),
   defaultPrompts:  () => api.get('/ai-visibility/default-prompts'),
   run:             (data) => api.post('/ai-visibility/run', data || {}),
+  cancel:          () => api.post('/ai-visibility/cancel'),
+  whyNotMentioned: (resultId) => api.post('/ai-visibility/why-not-mentioned', { result_id: resultId }),
+  suggestPrompts:  () => api.post('/ai-visibility/suggest-prompts'),
+  competitorCheck: (competitorName) => api.post('/ai-visibility/competitor-check', { competitor_name: competitorName }),
 };
 
 // Content Creation API
 export const contentApi = {
   drafts:        (productId) => api.get(`/content/drafts/${productId}`),
   generate:      (data) => api.post('/content/generate', data),
+  bulkGenerate:  (data) => api.post('/content/bulk-generate', data),
+  brandVoice:    () => api.post('/content/brand-voice'),
   updateDraft:   (id, data) => api.put(`/content/drafts/${id}`, data),
   publishDraft:  (id) => api.post(`/content/drafts/${id}/publish`),
   deleteDraft:   (id) => api.delete(`/content/drafts/${id}`),
@@ -181,6 +208,11 @@ export const auditApi = {
   stats:       (id) => api.get(`/audit/${id}/stats`),
   run:         (data) => api.post('/audit/run', data || {}),
   issueTypes:  () => api.get('/audit/issue-types'),
+  aiFix:       (auditId, type) => api.get(`/audit/${auditId}/issues/${encodeURIComponent(type)}/ai-fix`),
+  actionPlan:  (auditId) => api.get(`/audit/${auditId}/action-plan`),
+  scoreTrend:  () => api.get('/audit/score-trend'),
+  autoFix:     (auditId, body) => api.post(`/audit/${auditId}/auto-fix`, body),
+  refreshPsi:  (auditId) => api.post(`/audit/${auditId}/refresh-psi`),
 };
 
 export default api;

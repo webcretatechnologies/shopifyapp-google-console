@@ -5,12 +5,14 @@ import {
   HomeIcon, CreditCardIcon, QuestionCircleIcon, SettingsIcon,
 } from '@shopify/polaris-icons';
 import { useShop } from '../../context/ShopContext';
+import AiChat from '../AiChat';
 
+// Order by user lifecycle: setup → configure → pay → reference.
 const QUICK_LINKS = [
-  { path: '/setup-guide', label: 'Google Setup',  icon: HomeIcon },
+  { path: '/setup-guide', label: 'Google Setup',   icon: HomeIcon },
+  { path: '/settings',    label: 'Settings',       icon: SettingsIcon },
   { path: '/billing',     label: 'Plan & Billing', icon: CreditCardIcon },
   { path: '/help',        label: 'Help & Guide',   icon: QuestionCircleIcon },
-  { path: '/settings',    label: 'Settings',       icon: SettingsIcon },
 ];
 
 function QuickLinkButton({ to, label, icon: Icon, active, onClick }) {
@@ -44,17 +46,26 @@ export default function AppLayout() {
 
   return (
     <>
+      {/*
+        Order by daily-use priority:
+        1. Overview (Dashboard, Insights)
+        2. Channel reports (Analytics, SEO, Google Ads)
+        3. Findings & actions (AI Visibility, Site Audit)
+        4. Project tools (Content, Sitemap)
+        5. Catalog (Products)
+        6. Setup (Connect Google) — last because it's done once
+      */}
       <NavMenu>
         <a href={`/${qs}`} rel="home">Dashboard</a>
-        <a href={`/products${qs}`}>Products</a>
         <a href={`/insights${qs}`}>Insights</a>
+        <a href={`/analytics${qs}`}>Analytics</a>
         <a href={`/seo${qs}`}>SEO</a>
-        <a href={`/site-audit${qs}`}>Site Audit</a>
+        <a href={`/ads${qs}`}>Google Ads</a>
         <a href={`/ai-visibility${qs}`}>AI Visibility</a>
+        <a href={`/site-audit${qs}`}>Site Audit</a>
         <a href={`/content${qs}`}>Content &amp; Schema</a>
         <a href={`/sitemap${qs}`}>Sitemap Manager</a>
-        <a href={`/analytics${qs}`}>Analytics</a>
-        <a href={`/ads${qs}`}>Google Ads</a>
+        <a href={`/products${qs}`}>Products</a>
         <a href={`/connect-google${qs}`}>
           {googleStatus?.connected ? 'Connect Google' : 'Connect Google ⚠'}
         </a>
@@ -80,6 +91,8 @@ export default function AppLayout() {
       <div style={{ padding: '20px' }}>
         <Outlet />
       </div>
+
+      <AiChat />
       <div style={{
         position: 'fixed', bottom: 8, right: 8, zIndex: 9999,
         background: '#1a1a1a', color: '#fff', padding: '4px 10px',

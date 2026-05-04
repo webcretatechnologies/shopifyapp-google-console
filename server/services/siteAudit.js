@@ -4,6 +4,7 @@ const { URL } = require('url');
 const { Audit, AuditIssue, AuditPage, ShopSettings, Shop } = require('../models');
 const { decrypt } = require('./encryption');
 const { sendAuditComplete } = require('./email');
+const { runAllPSI, pickPSIUrls } = require('./pageSpeed');
 
 const SHOPIFY_API_VERSION = '2024-01';
 
@@ -784,6 +785,20 @@ async function runAudit(auditId) {
     const penalty = (errors * 5 + warnings * 2 + notices * 0.5) / totalPages;
     const score = Math.max(0, Math.min(100, Math.round(100 - penalty * 5)));
 
+    // PageSpeed Insights — fetch mobile + desktop reports for the homepage and
+    // one representative product/collection page. Best-effort: PSI failures
+    // never fail the audit (the crawl-based data is already saved).
+    let psi_data = null;
+    try {
+      const psiUrls = pickPSIUrls(rootNorm, pageRecords, { max: 3 });
+      console.log(`[SiteAudit] Running PSI for ${psiUrls.length} URL(s)...`);
+      const psiStart = Date.now();
+      psi_data = await runAllPSI(psiUrls);
+      console.log(`[SiteAudit] PSI done in ${Math.round((Date.now() - psiStart) / 1000)}s`);
+    } catch (err) {
+      console.warn('[SiteAudit] PSI run failed (non-blocking):', err.message);
+    }
+
     await audit.update({
       status: 'completed',
       pages_crawled: pages.length,
@@ -792,6 +807,7 @@ async function runAudit(auditId) {
       warnings_count: warnings,
       notices_count: notices,
       score,
+      psi_data,
       completed_at: new Date(),
       duration_ms: Date.now() - startTs,
     });

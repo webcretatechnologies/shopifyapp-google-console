@@ -1,5 +1,6 @@
 const { shopify } = require('../config/shopify');
 const { Shop } = require('../models');
+const { withShop } = require('../services/llm');
 
 async function shopifyAuth(req, res, next) {
   try {
@@ -15,7 +16,10 @@ async function shopifyAuth(req, res, next) {
 
     req.shop = shopRecord;
     req.shopDomain = shop;
-    next();
+    // Run the rest of the request inside an AsyncLocalStorage context so any
+    // askLLM() call downstream picks up this shop's per-shop API key overrides
+    // without each call site having to pass shopId explicitly.
+    return withShop(shopRecord.id, () => next());
   } catch (err) {
     console.error('Shopify auth error:', err);
     res.status(401).json({ error: 'Authentication failed' });

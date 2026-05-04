@@ -1,4 +1,4 @@
-const { shopifyApi, LATEST_API_VERSION, Session } = require('@shopify/shopify-api');
+const { shopifyApi, Session } = require('@shopify/shopify-api');
 const { NodeOAuthSessionStorage } = require('@shopify/shopify-api/adapters/node');
 
 const shopify = shopifyApi({
@@ -6,7 +6,7 @@ const shopify = shopifyApi({
   apiSecretKey: process.env.SHOPIFY_API_SECRET,
   scopes: (process.env.SHOPIFY_SCOPES || '').split(','),
   hostName: (process.env.SHOPIFY_HOST || '').replace(/https?:\/\//, ''),
-  apiVersion: LATEST_API_VERSION,
+  apiVersion: '2025-01',
   isEmbeddedApp: true,
 });
 

@@ -33,15 +33,70 @@ const CONFIG_SCHEMA = {
         help: 'Must match what is registered in Google Cloud Console' },
     ],
   },
-  ai: {
-    label: 'AI Visibility — Free LLM Keys',
+  ai_paid: {
+    label: 'AI — Paid Providers (preferred)',
+    description: 'Paid keys are tried FIRST for every AI feature (Site Audit fix-its, AI digests, content generation, etc.). Higher quality and reliability than free providers.',
+    keys: [
+      { key: 'OPENAI_API_KEY',     label: 'OpenAI Key',          secret: true, required: false,
+        provider: 'openai',
+        help: 'Powers GPT-4o-mini and GPT-4o. Pay-as-you-go pricing — typically $0.15 per 1M input tokens.',
+        signupUrl: 'https://platform.openai.com/api-keys',
+        steps: [
+          'Sign in at platform.openai.com',
+          'Add a payment method under Settings → Billing',
+          'Go to API Keys → "Create new secret key"',
+          'Copy the key (starts with sk-...) and paste it here',
+        ],
+      },
+      { key: 'ANTHROPIC_API_KEY',  label: 'Anthropic (Claude) Key', secret: true, required: false,
+        provider: 'anthropic',
+        help: 'Powers Claude 3.5 Haiku and Sonnet. Pay-as-you-go — Haiku is ~$0.80 per 1M input tokens.',
+        signupUrl: 'https://console.anthropic.com/settings/keys',
+        steps: [
+          'Sign in at console.anthropic.com',
+          'Add credits under Settings → Plans & Billing',
+          'Go to Settings → API Keys → "Create Key"',
+          'Copy the key (starts with sk-ant-...) and paste it here',
+        ],
+      },
+    ],
+  },
+  ai_free: {
+    label: 'AI — Free Providers (fallback)',
+    description: 'Used automatically if no paid key is configured, or as fallback when a paid provider is rate-limited.',
     keys: [
       { key: 'GEMINI_API_KEY',     label: 'Google Gemini Key',  secret: true, required: false,
-        help: 'Free tier at aistudio.google.com/apikey' },
+        provider: 'gemini',
+        help: '1500 requests/day free on Flash models.',
+        signupUrl: 'https://aistudio.google.com/apikey',
+        steps: [
+          'Sign in at aistudio.google.com with a Google account',
+          'Click "Get API key" → "Create API key in new project"',
+          'Copy the key and paste it here — no billing setup needed',
+        ],
+      },
       { key: 'GROQ_API_KEY',       label: 'Groq Key',           secret: true, required: false,
-        help: 'Free tier at console.groq.com/keys' },
+        provider: 'groq',
+        help: 'Generous free tier on Llama 3.3 70B. No credit card required.',
+        signupUrl: 'https://console.groq.com/keys',
+        steps: [
+          'Sign in at console.groq.com',
+          'Open API Keys → "Create API Key"',
+          'Name it (e.g. "shopify-app") → Submit',
+          'Copy the key (starts with gsk_...) and paste it here',
+        ],
+      },
       { key: 'OPENROUTER_API_KEY', label: 'OpenRouter Key',     secret: true, required: false,
-        help: 'For free :free models — openrouter.ai/keys' },
+        provider: 'openrouter',
+        help: 'Access to free models (gpt-oss, deepseek). Falls back to paid models if you add credits.',
+        signupUrl: 'https://openrouter.ai/keys',
+        steps: [
+          'Sign in at openrouter.ai',
+          'Go to Keys → "Create Key"',
+          'Copy the key (starts with sk-or-...) and paste it here',
+          'Free :free models work without adding credits',
+        ],
+      },
     ],
   },
   email: {
@@ -127,7 +182,7 @@ async function getAllConfigs() {
 
   const out = {};
   for (const [groupId, group] of Object.entries(CONFIG_SCHEMA)) {
-    out[groupId] = { label: group.label, keys: [] };
+    out[groupId] = { label: group.label, description: group.description, keys: [] };
     for (const k of group.keys) {
       const row = byKey[k.key];
       let value = '';

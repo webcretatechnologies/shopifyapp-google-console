@@ -28,9 +28,29 @@ const FEATURES = [
   { key: 'autoSitemap',     label: 'Auto Sitemap Submission',    group: 'SEO Tools' },
   { key: 'brandSplit',      label: 'Brand vs Non-Brand Split',   group: 'SEO Tools' },
   { key: 'prioritySupport', label: 'Priority Support',           group: 'Support' },
+
+  // ── AI Advanced — premium AI capabilities layered on top of the base features.
+  { key: 'aiAuditFix',         label: 'AI Audit Fix-It Panel',     group: 'AI Advanced' },
+  { key: 'aiAuditPlan',        label: 'AI Priority Action Plan',   group: 'AI Advanced' },
+  { key: 'aiAuditTrend',       label: 'AI Score Trend Insights',   group: 'AI Advanced' },
+  { key: 'aiAuditAutoFix',     label: 'One-Click Auto-Fix to Shopify', group: 'AI Advanced' },
+  { key: 'aiWhyNotMentioned',  label: 'AI Visibility — Why-Not-Mentioned', group: 'AI Advanced' },
+  { key: 'aiPromptSuggest',    label: 'AI Prompt Auto-Suggestions', group: 'AI Advanced' },
+  { key: 'aiCompetitor',       label: 'Competitor AI Tracking',    group: 'AI Advanced' },
+  { key: 'aiQuickWins',        label: 'AI Quick-Win Keywords',     group: 'AI Advanced' },
+  { key: 'aiCannibalization',  label: 'AI Cannibalization Detector', group: 'AI Advanced' },
+  { key: 'aiMetaRewrite',      label: 'AI Meta Tag Rewriter',      group: 'AI Advanced' },
+  { key: 'aiWeeklyDigest',     label: 'AI Weekly Digest',          group: 'AI Advanced' },
+  { key: 'aiAnomalies',        label: 'AI Anomaly Detection',      group: 'AI Advanced' },
+  { key: 'aiAdsWaste',         label: 'AI Ads Wasted-Spend Detector', group: 'AI Advanced' },
+  { key: 'aiRestockReasoning', label: 'AI Restock Prioritization', group: 'AI Advanced' },
+  { key: 'aiBulkContent',      label: 'Bulk AI Content Generation', group: 'AI Advanced' },
+  { key: 'aiBrandVoice',       label: 'Brand-Voice Consistency Check', group: 'AI Advanced' },
+  { key: 'aiChat',             label: 'AI Chat Assistant',         group: 'AI Advanced' },
+  { key: 'aiDailyBriefing',    label: 'Daily AI Briefing Email',   group: 'AI Advanced' },
 ];
 
-const GROUPS = ['Analytics', 'Dashboard', 'Insights', 'Data', 'AI & Site', 'SEO Tools', 'Support'];
+const GROUPS = ['Analytics', 'Dashboard', 'Insights', 'Data', 'AI & Site', 'AI Advanced', 'SEO Tools', 'Support'];
 
 const EMPTY_CHECKED = Object.fromEntries(FEATURES.map(f => [f.key, false]));
 // Ensure sitemapManager parses correctly from features string

@@ -20,6 +20,9 @@ const Audit = sequelize.define('Audit', {
   duration_ms: { type: DataTypes.INTEGER, allowNull: true },
   error_message: { type: DataTypes.TEXT, allowNull: true },
   config: { type: DataTypes.JSON, allowNull: true },
+  // PageSpeed Insights data — { fetched_at, urls: [], results: { url: { mobile, desktop } } }
+  // Populated at the end of runAudit() after the crawl finishes.
+  psi_data: { type: DataTypes.JSON, allowNull: true },
 }, {
   tableName: 'audits',
   indexes: [{ fields: ['shop_id'] }, { fields: ['status'] }],
