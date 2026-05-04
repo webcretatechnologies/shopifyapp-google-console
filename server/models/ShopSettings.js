@@ -17,6 +17,15 @@ const ShopSettings = sequelize.define('ShopSettings', {
   // AI Visibility settings — provider keys live in .env at the platform level
   ai_brand_name: { type: DataTypes.STRING(200), allowNull: true, comment: 'brand name to look for in AI responses; defaults to shop name' },
 
+  // Per-shop LLM API key overrides. When set, the corresponding key takes
+  // priority over the platform-level key (AppConfig / .env) for any AI feature
+  // run on behalf of this shop. Each is AES-256-GCM encrypted at rest.
+  openai_key_enc:     { type: DataTypes.TEXT, allowNull: true, comment: 'shop-level OpenAI API key (overrides platform OPENAI_API_KEY)' },
+  anthropic_key_enc:  { type: DataTypes.TEXT, allowNull: true, comment: 'shop-level Anthropic API key (overrides platform ANTHROPIC_API_KEY)' },
+  gemini_key_enc:     { type: DataTypes.TEXT, allowNull: true, comment: 'shop-level Google Gemini API key (overrides platform GEMINI_API_KEY)' },
+  groq_key_enc:       { type: DataTypes.TEXT, allowNull: true, comment: 'shop-level Groq API key (overrides platform GROQ_API_KEY)' },
+  openrouter_key_enc: { type: DataTypes.TEXT, allowNull: true, comment: 'shop-level OpenRouter API key (overrides platform OPENROUTER_API_KEY)' },
+
   // Notification preferences (per-shop)
   notification_email: { type: DataTypes.STRING(200), allowNull: true, comment: 'override for transactional emails; falls back to Shop.email' },
   email_prefs: { type: DataTypes.JSON, allowNull: true, comment: 'per-event opt-in flags for events the merchant CAN opt out of: { audit, aiVisibility, stockAlerts, weeklyReport }' },

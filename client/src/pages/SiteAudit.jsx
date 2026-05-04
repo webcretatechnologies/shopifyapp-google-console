@@ -5,9 +5,11 @@ import {
   Button, ButtonGroup, Tabs, Select, EmptyState,
 } from '@shopify/polaris';
 import { RefreshIcon } from '@shopify/polaris-icons';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { auditApi } from '../api';
 import { COLORS } from '../theme';
 import PlanGate from '../components/PlanGate';
+import { usePlan, downloadCSV } from '../hooks/usePlan';
 
 const SEVERITY_META = {
   error:   { label: 'Errors',   color: '#d72c0d', bg: '#ffebe9', dot: '#d72c0d' },
@@ -27,12 +29,42 @@ const CATEGORY_LABEL = {
 
 const TABS = [
   { id: 'overview',    label: 'Overview' },
+  { id: 'performance', label: 'Performance' },
+  { id: 'action-plan', label: '✨ Action Plan' },
   { id: 'issues',      label: 'Issues' },
   { id: 'pages',       label: 'Crawled Pages' },
   { id: 'statistics',  label: 'Statistics' },
   { id: 'progress',    label: 'Progress' },
   { id: 'compare',     label: 'Compare Crawls' },
 ];
+
+// Google's official Core Web Vitals thresholds.
+const CWV_THRESHOLDS = {
+  lcp:         { good: 2500,  poor: 4000,  unit: 'ms', label: 'Largest Contentful Paint' },
+  inp:         { good: 200,   poor: 500,   unit: 'ms', label: 'Interaction to Next Paint' },
+  cls:         { good: 0.1,   poor: 0.25,  unit: '',   label: 'Cumulative Layout Shift' },
+  fcp:         { good: 1800,  poor: 3000,  unit: 'ms', label: 'First Contentful Paint' },
+  ttfb:        { good: 800,   poor: 1800,  unit: 'ms', label: 'Time to First Byte' },
+  speed_index: { good: 3400,  poor: 5800,  unit: 'ms', label: 'Speed Index' },
+  tbt:         { good: 200,   poor: 600,   unit: 'ms', label: 'Total Blocking Time' },
+};
+
+function gradeCwv(metricKey, value) {
+  if (value == null) return 'unknown';
+  const t = CWV_THRESHOLDS[metricKey];
+  if (!t) return 'unknown';
+  if (value <= t.good) return 'good';
+  if (value <= t.poor) return 'needs-improvement';
+  return 'poor';
+}
+
+function formatCwv(metricKey, value) {
+  if (value == null) return '—';
+  const t = CWV_THRESHOLDS[metricKey];
+  if (!t) return String(value);
+  if (t.unit === 'ms') return value >= 1000 ? `${(value / 1000).toFixed(2)}s` : `${Math.round(value)} ms`;
+  return Number(value).toFixed(3);
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function humanize(s) {
@@ -102,6 +134,97 @@ function RunButton({ onClick, loading, label = 'Rerun audit' }) {
   );
 }
 
+// Compact score-over-time chart with AI commentary on the trend.
+// Hides itself if fewer than 2 audits have completed.
+function ScoreTrendCard() {
+  const { can } = usePlan();
+  const enabled = can('aiAuditTrend');
+  const { data } = useQuery('audit-score-trend', auditApi.scoreTrend, {
+    staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false, enabled,
+  });
+  if (!enabled) return null;
+  const points = data?.points || [];
+  if (points.length < 2) return null;
+  const chartData = points.map(p => ({
+    date: new Date(p.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    score: p.score,
+  }));
+  return (
+    <Card>
+      <Box padding="500">
+        <BlockStack gap="300">
+          <InlineStack align="space-between" blockAlign="center">
+            <Text variant="headingMd" fontWeight="semibold">Score over time</Text>
+            <Text variant="bodySm" tone="subdued">Last {points.length} audits</Text>
+          </InlineStack>
+          <div style={{ width: '100%', height: 140 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e1e3e5" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6d7175' }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#6d7175' }} axisLine={false} tickLine={false} width={30} />
+                <Tooltip />
+                <Line type="monotone" dataKey="score" stroke="#1a1a1a" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {data?.commentary && (
+            <div style={{ background: '#f4f5fa', borderLeft: '3px solid #1a1a1a', padding: '10px 14px', borderRadius: 4 }}>
+              <Text variant="bodySm">✨ {data.commentary}</Text>
+            </div>
+          )}
+        </BlockStack>
+      </Box>
+    </Card>
+  );
+}
+
+// Compact gauge (small variant of ScoreGauge) for PSI mobile/desktop tiles.
+function MiniScoreGauge({ score, label, sub }) {
+  if (score == null) {
+    return (
+      <BlockStack gap="100" inlineAlign="center">
+        <Text variant="bodySm" tone="subdued" fontWeight="medium">{label}</Text>
+        <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--p-color-text-subdued)' }}>—</div>
+        {sub && <Text variant="bodySm" tone="subdued">{sub}</Text>}
+      </BlockStack>
+    );
+  }
+  const p = Math.max(0, Math.min(100, score));
+  const stroke = p >= 90 ? '#008060' : p >= 50 ? '#b54708' : '#d72c0d';
+  const c = 2 * Math.PI * 32;
+  const dash = (p / 100) * c;
+  return (
+    <BlockStack gap="100" inlineAlign="center">
+      <Text variant="bodySm" tone="subdued" fontWeight="medium">{label}</Text>
+      <div style={{ position: 'relative', width: 84, height: 84 }}>
+        <svg width="84" height="84" viewBox="0 0 80 80">
+          <circle cx="40" cy="40" r="32" fill="none" stroke="#e1e3e5" strokeWidth="6" />
+          <circle cx="40" cy="40" r="32" fill="none" stroke={stroke} strokeWidth="6"
+                  strokeDasharray={`${dash} ${c}`} strokeLinecap="round"
+                  transform="rotate(-90 40 40)" />
+        </svg>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--p-color-text)' }}>{p}</span>
+        </div>
+      </div>
+      {sub && <Text variant="bodySm" tone="subdued">{sub}</Text>}
+    </BlockStack>
+  );
+}
+
+// Pull aggregated mobile/desktop performance scores from psi_data.
+// Averages across all tested URLs.
+function avgPsiScore(psi_data, strategy, scoreKey = 'performance') {
+  if (!psi_data?.results) return null;
+  const reports = Object.values(psi_data.results)
+    .map(r => r?.[strategy])
+    .filter(r => r && !r.error && r.scores);
+  if (reports.length === 0) return null;
+  const total = reports.reduce((sum, r) => sum + (r.scores[scoreKey] || 0), 0);
+  return Math.round(total / reports.length);
+}
+
 // ─── Tab: Overview ───────────────────────────────────────────────────────────
 function OverviewTab({ audit, summary }) {
   const breakdown = (() => {
@@ -123,6 +246,8 @@ function OverviewTab({ audit, summary }) {
 
   return (
     <BlockStack gap="500">
+      <ScoreTrendCard />
+
       {/* Top row — Site Health + Crawled Pages breakdown */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <Card>
@@ -170,6 +295,32 @@ function OverviewTab({ audit, summary }) {
           </Box>
         </Card>
       </div>
+
+      {/* PageSpeed Insights summary — mobile + desktop perf scores, lighthouse SEO/A11y/BP scores */}
+      {audit.psi_data?.results && (
+        <Card>
+          <Box padding="500">
+            <InlineStack align="space-between" blockAlign="center">
+              <BlockStack gap="050">
+                <Text variant="headingMd" fontWeight="semibold">PageSpeed Insights</Text>
+                <Text variant="bodySm" tone="subdued">
+                  Lighthouse scores averaged across {Object.keys(audit.psi_data.results).length} tested URL{Object.keys(audit.psi_data.results).length === 1 ? '' : 's'}
+                </Text>
+              </BlockStack>
+              <Text variant="bodySm" tone="subdued">See <strong>Performance</strong> tab for details</Text>
+            </InlineStack>
+            <Box paddingBlockStart="400">
+              <InlineGrid columns={{ xs: 2, md: 5 }} gap="400">
+                <MiniScoreGauge label="Performance · Mobile"  score={avgPsiScore(audit.psi_data, 'mobile',  'performance')}    sub="0–100" />
+                <MiniScoreGauge label="Performance · Desktop" score={avgPsiScore(audit.psi_data, 'desktop', 'performance')}    sub="0–100" />
+                <MiniScoreGauge label="SEO"                   score={avgPsiScore(audit.psi_data, 'mobile',  'seo')}            sub="Lighthouse" />
+                <MiniScoreGauge label="Accessibility"         score={avgPsiScore(audit.psi_data, 'mobile',  'accessibility')}  sub="Lighthouse" />
+                <MiniScoreGauge label="Best Practices"        score={avgPsiScore(audit.psi_data, 'mobile',  'best_practices')} sub="Lighthouse" />
+              </InlineGrid>
+            </Box>
+          </Box>
+        </Card>
+      )}
 
       {/* Severity counters */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
@@ -222,12 +373,268 @@ function BreakdownRow({ color, label, count }) {
   );
 }
 
+// ─── Tab: Performance (PSI) ──────────────────────────────────────────────────
+
+const CWV_GRADE_TONE = {
+  good:               { tone: 'success',   label: 'Good' },
+  'needs-improvement':{ tone: 'warning',   label: 'Needs improvement' },
+  poor:               { tone: 'critical',  label: 'Poor' },
+  unknown:            { tone: undefined,   label: 'No data' },
+};
+
+function CwvCell({ metricKey, value }) {
+  const grade = gradeCwv(metricKey, value);
+  const meta = CWV_GRADE_TONE[grade];
+  const t = CWV_THRESHOLDS[metricKey];
+  return (
+    <Card>
+      <Box padding="400">
+        <BlockStack gap="200">
+          <Text variant="bodySm" tone="subdued" fontWeight="medium">{t?.label || metricKey}</Text>
+          <Text variant="heading2xl" as="p" fontWeight="bold">{formatCwv(metricKey, value)}</Text>
+          <Badge tone={meta.tone}>{meta.label}</Badge>
+        </BlockStack>
+      </Box>
+    </Card>
+  );
+}
+
+function PerformanceTab({ audit }) {
+  const queryClient = useQueryClient();
+  const psi = audit.psi_data;
+  const allUrls = psi?.urls || (psi?.results ? Object.keys(psi.results) : []);
+  const [selectedUrl, setSelectedUrl] = useState(allUrls[0] || '');
+  // Default to mobile (Google's primary index). Declared at top so all hooks
+  // run on every render, even when we early-return for missing PSI data.
+  const [strategy, setStrategy] = useState('mobile');
+
+  // Re-sync if audit reloads with different URLs
+  useEffect(() => {
+    if (allUrls.length && !allUrls.includes(selectedUrl)) {
+      setSelectedUrl(allUrls[0]);
+    }
+  }, [allUrls.join('|')]);
+
+  // Refresh-only-PSI mutation — re-runs Lighthouse without re-crawling the site.
+  const refreshMutation = useMutation(
+    () => auditApi.refreshPsi(audit.id),
+    {
+      onSuccess: () => {
+        // Invalidate the audit query so the Performance tab shows the new psi_data.
+        queryClient.invalidateQueries('audit-latest');
+        queryClient.invalidateQueries(['audit', audit.id]);
+      },
+    },
+  );
+
+  if (!psi?.results || allUrls.length === 0) {
+    return (
+      <Card>
+        <Box padding="500">
+          <BlockStack gap="400" inlineAlign="center">
+            <Text variant="headingLg" as="h2" alignment="center">PageSpeed Insights data not available</Text>
+            <Box maxWidth="500px">
+              <Text variant="bodyMd" tone="subdued" alignment="center" as="p">
+                This audit was run before PageSpeed Insights was integrated, or the PSI fetch failed.
+                You can refresh just the PSI data without re-crawling the site (~60–120 seconds), or run a fresh audit.
+              </Text>
+            </Box>
+            <Button
+              variant="primary"
+              icon={RefreshIcon}
+              onClick={() => refreshMutation.mutate()}
+              loading={refreshMutation.isLoading}
+            >
+              {refreshMutation.isLoading ? 'Running PageSpeed…' : 'Refresh PageSpeed data'}
+            </Button>
+            {refreshMutation.error && (
+              <Banner tone="critical">
+                <Text as="p">{refreshMutation.error?.error || refreshMutation.error?.message || 'Refresh failed'}</Text>
+              </Banner>
+            )}
+          </BlockStack>
+        </Box>
+      </Card>
+    );
+  }
+
+  const report = psi.results[selectedUrl] || {};
+  const mobile = report.mobile && !report.mobile.error ? report.mobile : null;
+  const desktop = report.desktop && !report.desktop.error ? report.desktop : null;
+  const active = strategy === 'mobile' ? mobile : desktop;
+  const fetchedAt = psi.fetched_at ? new Date(psi.fetched_at).toLocaleString() : null;
+
+  return (
+    <BlockStack gap="500">
+      {/* Header — URL selector + strategy toggle + fetched time */}
+      <Card>
+        <Box padding="400">
+          <InlineStack align="space-between" blockAlign="center" wrap={false} gap="400">
+            <BlockStack gap="100">
+              <Text variant="headingMd" fontWeight="semibold">PageSpeed Insights · Lighthouse</Text>
+              {fetchedAt && <Text variant="bodySm" tone="subdued">Last refreshed {fetchedAt}</Text>}
+            </BlockStack>
+            <InlineStack gap="200" blockAlign="center">
+              {allUrls.length > 1 && (
+                <div style={{ minWidth: 280 }}>
+                  <Select
+                    label="URL"
+                    labelHidden
+                    options={allUrls.map(u => ({ label: u, value: u }))}
+                    value={selectedUrl}
+                    onChange={setSelectedUrl}
+                  />
+                </div>
+              )}
+              <ButtonGroup variant="segmented">
+                <Button pressed={strategy === 'mobile'}  onClick={() => setStrategy('mobile')}>Mobile</Button>
+                <Button pressed={strategy === 'desktop'} onClick={() => setStrategy('desktop')}>Desktop</Button>
+              </ButtonGroup>
+              <Button
+                icon={RefreshIcon}
+                onClick={() => refreshMutation.mutate()}
+                loading={refreshMutation.isLoading}
+              >
+                {refreshMutation.isLoading ? 'Refreshing…' : 'Refresh PSI'}
+              </Button>
+            </InlineStack>
+          </InlineStack>
+          {refreshMutation.error && (
+            <Box paddingBlockStart="300">
+              <Banner tone="critical" onDismiss={() => refreshMutation.reset()}>
+                <Text as="p">{refreshMutation.error?.error || refreshMutation.error?.message || 'PSI refresh failed'}</Text>
+              </Banner>
+            </Box>
+          )}
+        </Box>
+      </Card>
+
+      {!active ? (
+        <Card>
+          <EmptyState heading={`No ${strategy} report for this URL`} image="">
+            <p>{report[strategy]?.error || 'PSI did not return data for this URL/strategy combination.'}</p>
+          </EmptyState>
+        </Card>
+      ) : (
+        <>
+          {/* Lighthouse score gauges */}
+          <Card>
+            <Box padding="500">
+              <InlineGrid columns={{ xs: 2, md: 4 }} gap="400">
+                <MiniScoreGauge label="Performance"   score={active.scores?.performance}     sub="0–100" />
+                <MiniScoreGauge label="Accessibility" score={active.scores?.accessibility}   sub="Lighthouse" />
+                <MiniScoreGauge label="Best Practices" score={active.scores?.best_practices} sub="Lighthouse" />
+                <MiniScoreGauge label="SEO"           score={active.scores?.seo}             sub="Lighthouse" />
+              </InlineGrid>
+            </Box>
+          </Card>
+
+          {/* Core Web Vitals — primary three */}
+          <BlockStack gap="200">
+            <Text variant="headingMd" fontWeight="semibold">Core Web Vitals ({strategy})</Text>
+            <Text variant="bodySm" tone="subdued">Google's three primary metrics for user experience. Pass thresholds: LCP ≤ 2.5s, INP ≤ 200ms, CLS ≤ 0.1.</Text>
+            <InlineGrid columns={{ xs: 1, md: 3 }} gap="400">
+              <CwvCell metricKey="lcp" value={active.cwv?.lcp?.value} />
+              <CwvCell metricKey="inp" value={active.cwv?.inp?.value} />
+              <CwvCell metricKey="cls" value={active.cwv?.cls?.value} />
+            </InlineGrid>
+          </BlockStack>
+
+          {/* Other speed metrics */}
+          <BlockStack gap="200">
+            <Text variant="headingMd" fontWeight="semibold">Other speed metrics</Text>
+            <InlineGrid columns={{ xs: 2, md: 4 }} gap="400">
+              <CwvCell metricKey="fcp"         value={active.cwv?.fcp?.value} />
+              <CwvCell metricKey="ttfb"        value={active.cwv?.ttfb?.value} />
+              <CwvCell metricKey="speed_index" value={active.cwv?.speed_index?.value} />
+              <CwvCell metricKey="tbt"         value={active.cwv?.tbt?.value} />
+            </InlineGrid>
+          </BlockStack>
+
+          {/* Opportunities */}
+          {active.opportunities && active.opportunities.length > 0 && (
+            <Card>
+              <Box padding="0">
+                <div style={{ padding: '14px 16px', borderBottom: `1px solid ${COLORS.border}` }}>
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text variant="headingMd" fontWeight="semibold">Top opportunities</Text>
+                    <Text variant="bodySm" tone="subdued">Estimated time you'd save by fixing each</Text>
+                  </InlineStack>
+                </div>
+                {active.opportunities.map(opp => (
+                  <div key={opp.id} style={{
+                    padding: '14px 16px',
+                    borderBottom: `1px solid ${COLORS.borderMuted}`,
+                  }}>
+                    <InlineStack align="space-between" blockAlign="start" gap="400" wrap={false}>
+                      <BlockStack gap="100">
+                        <Text variant="bodyMd" fontWeight="medium">{opp.title}</Text>
+                        {opp.description && (
+                          <Text variant="bodySm" tone="subdued">{opp.description.replace(/\[Learn more.*$/, '').trim()}</Text>
+                        )}
+                      </BlockStack>
+                      <Text variant="bodyMd" fontWeight="semibold">
+                        {opp.potential_ms >= 1000 ? `${(opp.potential_ms / 1000).toFixed(2)}s` : `${opp.potential_ms} ms`}
+                      </Text>
+                    </InlineStack>
+                  </div>
+                ))}
+              </Box>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* Per-URL summary table — only useful when more than one URL was tested */}
+      {allUrls.length > 1 && (
+        <Card>
+          <Box padding="0">
+            <div style={{ padding: '14px 16px', borderBottom: `1px solid ${COLORS.border}` }}>
+              <Text variant="headingMd" fontWeight="semibold">Per-URL summary</Text>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: 'var(--p-color-bg-surface-secondary)' }}>
+                    <th style={{ padding: '10px 14px', textAlign: 'left',  color: COLORS.textSubdued, fontWeight: 600, fontSize: 12 }}>URL</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right', color: COLORS.textSubdued, fontWeight: 600, fontSize: 12 }}>Perf · Mobile</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right', color: COLORS.textSubdued, fontWeight: 600, fontSize: 12 }}>Perf · Desktop</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right', color: COLORS.textSubdued, fontWeight: 600, fontSize: 12 }}>LCP (mob)</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right', color: COLORS.textSubdued, fontWeight: 600, fontSize: 12 }}>CLS (mob)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allUrls.map(u => {
+                    const r = psi.results[u] || {};
+                    const m = r.mobile && !r.mobile.error ? r.mobile : null;
+                    const d = r.desktop && !r.desktop.error ? r.desktop : null;
+                    return (
+                      <tr key={u} style={{ borderTop: `1px solid ${COLORS.borderMuted}`, cursor: 'pointer' }} onClick={() => setSelectedUrl(u)}>
+                        <td style={{ padding: '10px 14px', color: u === selectedUrl ? '#1a1a1a' : '#1a73e8', fontWeight: u === selectedUrl ? 600 : 400, wordBreak: 'break-all' }}>{u}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>{m?.scores?.performance ?? '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>{d?.scores?.performance ?? '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>{m?.cwv?.lcp?.value != null ? formatCwv('lcp', m.cwv.lcp.value) : '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>{m?.cwv?.cls?.value != null ? formatCwv('cls', m.cwv.cls.value) : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Box>
+        </Card>
+      )}
+    </BlockStack>
+  );
+}
+
 // ─── Tab: Issues ─────────────────────────────────────────────────────────────
 function IssuesTab({ audit, summary }) {
   const [activeSeverity, setActiveSeverity] = useState(null);
   const [activeCategory, setActiveCategory] = useState(null);
   const [expandedType, setExpandedType] = useState(null);
   const [issuesForType, setIssuesForType] = useState({});
+  const [aiFixForType, setAiFixForType] = useState({}); // { [type]: { loading, error, data } }
 
   useEffect(() => {
     if (!expandedType || issuesForType[expandedType]) return;
@@ -235,6 +642,16 @@ function IssuesTab({ audit, summary }) {
       setIssuesForType(prev => ({ ...prev, [expandedType]: data }))
     );
   }, [expandedType, audit.id]);
+
+  const requestAiFix = async (type) => {
+    setAiFixForType(s => ({ ...s, [type]: { loading: true } }));
+    try {
+      const data = await auditApi.aiFix(audit.id, type);
+      setAiFixForType(s => ({ ...s, [type]: { data } }));
+    } catch (err) {
+      setAiFixForType(s => ({ ...s, [type]: { error: err?.error || err?.message || 'Failed to get AI fix' } }));
+    }
+  };
 
   const filtered = summary.filter(s =>
     (!activeSeverity || s.severity === activeSeverity) &&
@@ -265,6 +682,14 @@ function IssuesTab({ audit, summary }) {
           {allCategories.map(c => (
             <FilterPill key={c} label={CATEGORY_LABEL[c] || c} active={activeCategory === c} onClick={() => setActiveCategory(c)} />
           ))}
+          <span style={{ flex: 1 }} />
+          <Button size="slim" onClick={() => downloadCSV(
+            summary.map(s => ({ severity: s.severity, type: s.type, category: s.category, count: s.count })),
+            `site-audit-${audit.id}-issues.csv`,
+          )}>Download CSV</Button>
+          <Button size="slim" onClick={() => window.open(`/api/print/audit/${audit.id}` + window.location.search, '_blank')}>
+            Download Report
+          </Button>
         </div>
 
         {/* Issue rows */}
@@ -298,7 +723,14 @@ function IssuesTab({ audit, summary }) {
                 </InlineStack>
               </div>
               {expanded && (
-                <div style={{ background: '#fafbfb', borderBottom: `1px solid ${COLORS.borderMuted}`, padding: '8px 24px 12px' }}>
+                <div style={{ background: '#fafbfb', borderBottom: `1px solid ${COLORS.borderMuted}`, padding: '8px 24px 16px' }}>
+                  <AiFixPanel
+                    state={aiFixForType[row.type]}
+                    onRequest={() => requestAiFix(row.type)}
+                    auditId={audit.id}
+                    issueType={row.type}
+                    affectedCount={row.count}
+                  />
                   {!list && <Text variant="bodySm" tone="subdued">Loading…</Text>}
                   {list && list.length === 0 && <Text variant="bodySm" tone="subdued">No data</Text>}
                   {list && list.slice(0, 50).map((i, idx) => (
@@ -330,6 +762,245 @@ function FilterPill({ label, active, onClick }) {
   );
 }
 
+// AI-generated, traffic-weighted action plan. Lazily fetched on tab open.
+// The same audit produces the same plan deterministically enough that we
+// don't bother caching server-side — the LLM call is fast.
+function ActionPlanTab({ audit }) {
+  const { can } = usePlan();
+  const enabled = can('aiAuditPlan');
+  const { data, isLoading, error, refetch } = useQuery(
+    ['audit-action-plan', audit.id],
+    () => auditApi.actionPlan(audit.id),
+    { staleTime: 30 * 60 * 1000, refetchOnWindowFocus: false, enabled },
+  );
+
+  if (!enabled) {
+    return (
+      <PlanGate feature="aiAuditPlan" required="growth">
+        <Card><Box padding="500"><Text variant="headingMd">✨ Priority action plan</Text></Box></Card>
+      </PlanGate>
+    );
+  }
+
+  const impactColor = (impact) => ({ high: '#d72c0d', medium: '#f49342', low: '#8a8a8a' }[impact] || '#8a8a8a');
+  const effortColor = (effort) => ({ quick: '#108043', moderate: '#f49342', significant: '#d72c0d' }[effort] || '#8a8a8a');
+
+  return (
+    <Card>
+      <Box padding="500">
+        <BlockStack gap="400">
+          <BlockStack gap="100">
+            <InlineStack align="space-between" blockAlign="center">
+              <Text variant="headingMd" as="h2">✨ Priority action plan</Text>
+              <Button size="slim" onClick={() => refetch()} loading={isLoading}>Regenerate</Button>
+            </InlineStack>
+            <Text variant="bodySm" tone="subdued">
+              Ranked by impact, scope, and Search Console traffic. Fix from top to bottom for the biggest gains.
+            </Text>
+          </BlockStack>
+
+          {isLoading && <Box padding="800"><InlineStack align="center"><Spinner /></InlineStack></Box>}
+          {error && (
+            <Banner tone="critical" title="Couldn't generate plan" action={{ content: 'Retry', onAction: () => refetch() }}>
+              <p>{error?.error || error?.message || 'Try again in a moment.'}</p>
+            </Banner>
+          )}
+          {data && Array.isArray(data.actions) && data.actions.length === 0 && (
+            <Banner tone="success">{data.message || 'No issues to action — your site looks clean.'}</Banner>
+          )}
+          {data && Array.isArray(data.actions) && data.actions.length > 0 && (
+            <BlockStack gap="300">
+              {data.actions.map((a) => (
+                <div key={a.priority} style={{
+                  background: '#fff',
+                  border: '1px solid #e1e3e5',
+                  borderLeft: `4px solid ${impactColor(a.expected_impact)}`,
+                  borderRadius: 8,
+                  padding: '14px 16px',
+                }}>
+                  <BlockStack gap="200">
+                    <InlineStack gap="200" blockAlign="center">
+                      <span style={{
+                        width: 28, height: 28, borderRadius: '50%', background: '#1a1a1a', color: '#fff',
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 13, fontWeight: 700,
+                      }}>{a.priority}</span>
+                      <Text variant="bodyMd" fontWeight="semibold">{a.title}</Text>
+                    </InlineStack>
+                    <Text variant="bodySm" tone="subdued">{a.why}</Text>
+                    <InlineStack gap="200">
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#f4f5fa', color: '#202223' }}>
+                        Impact: <strong style={{ color: impactColor(a.expected_impact) }}>{a.expected_impact}</strong>
+                      </span>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#f4f5fa', color: '#202223' }}>
+                        Effort: <strong style={{ color: effortColor(a.effort) }}>{a.effort}</strong>
+                      </span>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#f4f5fa', color: '#202223' }}>
+                        {a.affected_count} {a.affected_count === 1 ? 'page' : 'pages'}
+                      </span>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#fff', color: '#6d7175', border: '1px solid #e1e3e5' }}>
+                        {humanize(a.type)}
+                      </span>
+                    </InlineStack>
+                  </BlockStack>
+                </div>
+              ))}
+            </BlockStack>
+          )}
+        </BlockStack>
+      </Box>
+    </Card>
+  );
+}
+
+const AUTOFIX_TYPES = new Set(['missing_meta_description', 'missing_title_tag', 'missing_alt_text']);
+
+// Inline panel shown above the URL list when an issue type is expanded.
+// Lazily fetches an AI explanation + step-by-step fix for the issue type.
+function AiFixPanel({ state, onRequest, auditId, issueType, affectedCount }) {
+  const { can } = usePlan();
+  const canAiFix = can('aiAuditFix');
+  const canAutoFix = can('aiAuditAutoFix');
+  const supportsAutoFix = AUTOFIX_TYPES.has(issueType) && canAutoFix;
+  const [autoFixState, setAutoFixState] = useState(null);
+
+  if (!canAiFix && !state) {
+    // Render compact upgrade prompt instead of the "Get AI fix" button.
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <PlanGate feature="aiAuditFix" required="growth" compact>AI fix-it</PlanGate>
+      </div>
+    );
+  }
+
+  const runAutoFix = async (dry_run) => {
+    setAutoFixState({ loading: true, dry_run });
+    try {
+      const result = await auditApi.autoFix(auditId, { issue_type: issueType, dry_run });
+      setAutoFixState({ result });
+    } catch (err) {
+      setAutoFixState({ error: err?.error || err?.message || 'Auto-fix failed' });
+    }
+  };
+
+
+  if (!state) {
+    return (
+      <div style={{ marginBottom: 12, padding: '10px 12px', background: '#fff', border: '1px solid #e1e3e5', borderRadius: 8 }}>
+        <InlineStack align="space-between" blockAlign="center">
+          <Text variant="bodySm" tone="subdued">Want a clear, step-by-step fix written for you?</Text>
+          <Button size="slim" variant="primary" onClick={onRequest}>✨ Get AI fix</Button>
+        </InlineStack>
+      </div>
+    );
+  }
+  if (state.loading) {
+    return (
+      <div style={{ marginBottom: 12, padding: 12, background: '#fff', border: '1px solid #e1e3e5', borderRadius: 8 }}>
+        <InlineStack gap="200" blockAlign="center">
+          <Spinner size="small" />
+          <Text variant="bodySm" tone="subdued">Generating fix…</Text>
+        </InlineStack>
+      </div>
+    );
+  }
+  if (state.error) {
+    return (
+      <div style={{ marginBottom: 12, padding: 12, background: '#fff5f5', border: '1px solid #f5c2c0', borderRadius: 8 }}>
+        <InlineStack align="space-between" blockAlign="center">
+          <Text variant="bodySm" tone="critical">{state.error}</Text>
+          <Button size="slim" onClick={onRequest}>Retry</Button>
+        </InlineStack>
+      </div>
+    );
+  }
+  const fix = state.data;
+  return (
+    <div style={{ marginBottom: 12, padding: 14, background: '#fff', border: '1px solid #1a1a1a', borderRadius: 8 }}>
+      <BlockStack gap="200">
+        <InlineStack gap="200" blockAlign="center">
+          <span style={{ fontSize: 16 }}>✨</span>
+          <Text variant="bodyMd" fontWeight="semibold">AI fix-it</Text>
+          <span style={{ fontSize: 11, color: COLORS.textSubdued }}>· {fix.affected_count} {fix.affected_count === 1 ? 'page' : 'pages'} affected</span>
+        </InlineStack>
+
+        {fix.what && (
+          <div>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: COLORS.textSubdued }}>What this is</span>
+            <div style={{ fontSize: 13, marginTop: 2 }}>{fix.what}</div>
+          </div>
+        )}
+
+        {fix.why_it_matters && (
+          <div>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: COLORS.textSubdued }}>Why it matters</span>
+            <div style={{ fontSize: 13, marginTop: 2 }}>{fix.why_it_matters}</div>
+          </div>
+        )}
+
+        {fix.how_to_fix && (
+          <div>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: COLORS.textSubdued }}>How to fix</span>
+            <div style={{ fontSize: 13, marginTop: 2, whiteSpace: 'pre-wrap' }}>{fix.how_to_fix}</div>
+          </div>
+        )}
+
+        {fix.shopify_path && (
+          <div>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: COLORS.textSubdued }}>Where in Shopify</span>
+            <div style={{ fontSize: 13, marginTop: 2 }}>{fix.shopify_path}</div>
+          </div>
+        )}
+
+        {fix.code_snippet && (
+          <div>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: COLORS.textSubdued }}>Copy-paste fix</span>
+            <pre style={{
+              background: '#1a1a2e', color: '#a8b3cf', padding: '10px 12px',
+              borderRadius: 6, fontSize: 12, marginTop: 4, overflowX: 'auto',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            }}>{fix.code_snippet}</pre>
+          </div>
+        )}
+
+        {supportsAutoFix && (
+          <div style={{ marginTop: 8, padding: 10, border: '1px dashed #1a1a1a', borderRadius: 6, background: '#fafbfb' }}>
+            <BlockStack gap="200">
+              <InlineStack align="space-between" blockAlign="center">
+                <Text variant="bodySm" fontWeight="semibold">⚡ Auto-fix on Shopify</Text>
+                <InlineStack gap="100">
+                  <Button size="micro" onClick={() => runAutoFix(true)} loading={autoFixState?.loading && autoFixState?.dry_run}>
+                    Preview
+                  </Button>
+                  <Button size="micro" variant="primary" onClick={() => runAutoFix(false)} loading={autoFixState?.loading && !autoFixState?.dry_run}>
+                    Apply to all
+                  </Button>
+                </InlineStack>
+              </InlineStack>
+              {autoFixState?.error && <Text variant="bodySm" tone="critical">{autoFixState.error}</Text>}
+              {autoFixState?.result && (
+                <BlockStack gap="100">
+                  <Text variant="bodySm" tone={autoFixState.result.failed > 0 ? 'caution' : 'success'}>
+                    {autoFixState.result.dry_run ? 'Preview:' : 'Done:'} {autoFixState.result.succeeded}/{autoFixState.result.total} products
+                    {autoFixState.result.failed > 0 ? ` · ${autoFixState.result.failed} failed` : ''}
+                  </Text>
+                  {(autoFixState.result.results || []).slice(0, 5).map((r, i) => (
+                    <div key={i} style={{ fontSize: 11, color: r.ok ? '#108043' : '#d72c0d' }}>
+                      {r.ok ? '✓' : '✗'} <code>{r.handle}</code>
+                      {r.value && <span style={{ color: '#6d7175' }}> — {r.value.slice(0, 60)}{r.value.length > 60 ? '…' : ''}</span>}
+                      {r.error && <span> — {r.error}</span>}
+                    </div>
+                  ))}
+                </BlockStack>
+              )}
+            </BlockStack>
+          </div>
+        )}
+      </BlockStack>
+    </div>
+  );
+}
+
 // ─── Tab: Crawled Pages ──────────────────────────────────────────────────────
 function CrawledPagesTab({ audit }) {
   const [statusFilter, setStatusFilter] = useState(null);
@@ -347,6 +1018,15 @@ function CrawledPagesTab({ audit }) {
           <FilterPill label="3xx"  active={statusFilter === '3xx'}    onClick={() => setStatusFilter('3xx')} sevColor="#0870d9" />
           <FilterPill label="4xx"  active={statusFilter === '4xx'}    onClick={() => setStatusFilter('4xx')} sevColor="#d72c0d" />
           <FilterPill label="5xx"  active={statusFilter === '5xx'}    onClick={() => setStatusFilter('5xx')} sevColor="#d72c0d" />
+          <span style={{ flex: 1 }} />
+          <Button size="slim" onClick={() => downloadCSV(
+            pages.map(p => ({
+              url: p.url, status: p.status_code || '', title: p.title || '',
+              meta_description: p.meta_description || '', word_count: p.word_count || 0,
+              load_time_ms: p.load_time_ms || 0,
+            })),
+            `site-audit-${audit.id}-pages.csv`,
+          )} disabled={!pages.length}>Download CSV</Button>
         </div>
         {isLoading && <Box padding="800"><InlineStack align="center"><Spinner size="small" /></InlineStack></Box>}
         {!isLoading && (
@@ -752,8 +1432,10 @@ function SiteAuditInner() {
               </Box>
             )}
 
-            {tab === 'overview'   && auditDone && <OverviewTab     audit={latest} summary={summary} />}
-            {tab === 'issues'     && auditDone && <IssuesTab       audit={latest} summary={summary} />}
+            {tab === 'overview'    && auditDone && <OverviewTab     audit={latest} summary={summary} />}
+            {tab === 'performance' && auditDone && <PerformanceTab  audit={latest} />}
+            {tab === 'action-plan' && auditDone && <ActionPlanTab   audit={latest} />}
+            {tab === 'issues'      && auditDone && <IssuesTab       audit={latest} summary={summary} />}
             {tab === 'pages'      && auditDone && <CrawledPagesTab audit={latest} />}
             {tab === 'statistics' && auditDone && <StatisticsTab   audit={latest} />}
             {tab === 'progress'                  && <ProgressTab />}

@@ -30,6 +30,25 @@ const FEATURE_CATALOG = [
   { label: 'Auto Sitemap Submission',  group: 'SEO Tools' },
   { label: 'Brand vs Non-Brand Split', group: 'SEO Tools' },
   { label: 'Priority Support',         group: 'Support' },
+  // AI Advanced add-ons
+  { label: 'AI Audit Fix-It Panel',    group: 'AI Advanced' },
+  { label: 'AI Priority Action Plan',  group: 'AI Advanced' },
+  { label: 'AI Score Trend Insights',  group: 'AI Advanced' },
+  { label: 'One-Click Auto-Fix to Shopify', group: 'AI Advanced' },
+  { label: 'AI Visibility — Why-Not-Mentioned', group: 'AI Advanced' },
+  { label: 'AI Prompt Auto-Suggestions', group: 'AI Advanced' },
+  { label: 'Competitor AI Tracking',   group: 'AI Advanced' },
+  { label: 'AI Quick-Win Keywords',    group: 'AI Advanced' },
+  { label: 'AI Cannibalization Detector', group: 'AI Advanced' },
+  { label: 'AI Meta Tag Rewriter',     group: 'AI Advanced' },
+  { label: 'AI Weekly Digest',         group: 'AI Advanced' },
+  { label: 'AI Anomaly Detection',     group: 'AI Advanced' },
+  { label: 'AI Ads Wasted-Spend Detector', group: 'AI Advanced' },
+  { label: 'AI Restock Prioritization',group: 'AI Advanced' },
+  { label: 'Bulk AI Content Generation', group: 'AI Advanced' },
+  { label: 'Brand-Voice Consistency Check', group: 'AI Advanced' },
+  { label: 'AI Chat Assistant',        group: 'AI Advanced' },
+  { label: 'Daily AI Briefing Email',  group: 'AI Advanced' },
 ];
 
 function ExtraFeaturesModal({ shopId, open, onClose }) {

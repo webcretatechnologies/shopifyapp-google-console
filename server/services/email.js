@@ -205,6 +205,18 @@ const DEFAULT_TEMPLATES = {
       </div>`,
     footer_html: `Change which day this lands in your inbox in <a href="{{app_url}}/settings" style="color:#6d7175;">Settings → Notifications</a>.`,
   },
+
+  dailyBriefing: {
+    subject: '{{shop_name}} — 3 things to look at today',
+    body_html: `
+      <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;">Good morning ☀️</h1>
+      <p>Here's a short briefing for <strong>{{shop_name}}</strong> based on yesterday's signals:</p>
+      {{{briefing_html}}}
+      <div style="text-align:center;margin:16px 0 8px;">
+        <a href="{{app_url}}/" style="display:inline-block;background:${COLORS.brand};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Open dashboard →</a>
+      </div>`,
+    footer_html: `Turn off the daily briefing in <a href="{{app_url}}/settings" style="color:#6d7175;">Settings → Notifications</a>.`,
+  },
 };
 
 // Sample plan-context tokens used for previews (so the admin sees something
@@ -233,6 +245,7 @@ const EVENT_META = {
   aiVisibility:    { label: 'AI Visibility Complete Email',   description: 'Sent when an AI Visibility analysis finishes.',             adminOnly: false, availableTokens: [...COMMON_TOKENS, 'score', 'mentions', 'citations', 'cited_pages'], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', score: 55, mentions: 18, citations: 4, cited_pages: 2, app_url: APP_URL } },
   stockAlerts:     { label: 'Stock Alert Email',              description: 'Sent when a high-traffic product goes out of stock.',       adminOnly: false, availableTokens: [...COMMON_TOKENS, 'product_title', 'variant_title', 'sku', 'inventory', 'monthly_clicks'], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', product_title: 'Blue Widget', variant_title: 'Large', sku: 'BW-L', inventory: 0, monthly_clicks: 240, app_url: APP_URL } },
   weeklyReport:    { label: 'Weekly Report Email',            description: 'Weekly summary sent on the merchant\'s chosen day.',        adminOnly: false, availableTokens: [...COMMON_TOKENS], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', app_url: APP_URL } },
+  dailyBriefing:   { label: 'Daily Briefing Email',           description: 'Optional daily "3 things to look at today" email.',        adminOnly: false, availableTokens: [...COMMON_TOKENS, 'briefing_html'], sampleTokens: { ...SAMPLE_PLAN, shop_name: 'Acme Co', app_url: APP_URL, briefing_html: '<ul><li>Site Audit score dropped 5 points overnight — check the new errors.</li><li>Ad campaign "Summer Sale" spent $80 with 0 conversions yesterday.</li><li>Low stock on top traffic product "Blue Widget".</li></ul>' } },
 };
 const EVENT_KEYS = Object.keys(EVENT_META);
 
@@ -410,6 +423,9 @@ async function sendAIVisibilityComplete(shop, run) {
 async function sendPlanReminder(shop) {
   return dispatch(shop, 'planReminder', {});
 }
+async function sendDailyBriefing(shop, briefingHtml) {
+  return dispatch(shop, 'dailyBriefing', { briefing_html: briefingHtml });
+}
 async function sendCriticalStockAlert(shop, alert) {
   return dispatch(shop, 'stockAlerts', {
     product_title: alert.product_title,
@@ -429,6 +445,7 @@ module.exports = {
   sendAIVisibilityComplete,
   sendCriticalStockAlert,
   sendPlanReminder,
+  sendDailyBriefing,
   // primitives + admin helpers
   sendEmail,
   smtpConfigured,

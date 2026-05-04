@@ -5,7 +5,7 @@ import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { analyticsApi, settingsApi } from '../../api';
+import { analyticsApi, settingsApi, seoAiApi } from '../../api';
 import { useShop } from '../../context/ShopContext';
 import { usePlan, downloadCSV } from '../../hooks/usePlan';
 import PlanGate from '../../components/PlanGate';
@@ -248,6 +248,7 @@ export default function SEOPage() {
     { id:'overview',     label:'Overview' },
     { id:'performance',  label:'Performance' },
     { id:'insights',     label:'Insights' },
+    { id:'ai',           label:'✨ AI Insights' },
     { id:'countries',    label:'Countries' },
     { id:'devices',      label:'Devices' },
   ];
@@ -685,6 +686,9 @@ export default function SEOPage() {
         </>
       )}
 
+      {/* ── AI INSIGHTS ── */}
+      {section==='ai' && <SeoAiSection />}
+
       {/* ── COUNTRIES ── */}
       {section==='countries' && (
         <>
@@ -814,6 +818,148 @@ export default function SEOPage() {
         </>
       )}
     </Page>
+  );
+}
+
+// Three AI-powered SEO insights — quick wins, cannibalization, meta tags.
+// Each card lazily fires its endpoint when expanded; results cached in state.
+function SeoAiSection() {
+  const { can } = usePlan();
+  const [wins, setWins] = useState(null);            // null | { loading } | { error } | { data }
+  const [conflicts, setConflicts] = useState(null);
+  const [metas, setMetas] = useState(null);
+
+  const load = async (setter, fn) => {
+    setter({ loading: true });
+    try {
+      const data = await fn();
+      setter({ data });
+    } catch (err) {
+      setter({ error: err?.error || err?.message || 'Failed' });
+    }
+  };
+
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:16 }}>
+      {/* Quick Wins */}
+      {!can('aiQuickWins') ? (
+        <PlanGate feature="aiQuickWins" required="growth">
+          <SCard title="✨ Quick-win keywords"><Box padding="400"><Text>Locked</Text></Box></SCard>
+        </PlanGate>
+      ) : (
+      <SCard
+        title="✨ Quick-win keywords"
+        action={<Button size="slim" onClick={() => load(setWins, seoAiApi.quickWins)} loading={wins?.loading}>{wins?.data ? 'Refresh' : 'Find quick wins'}</Button>}
+      >
+        <Box padding="400">
+          {!wins && <Text variant="bodySm" tone="subdued">Click "Find quick wins" — AI picks keywords ranking just outside the top 5 with rising impressions and suggests how to push them up.</Text>}
+          {wins?.error && <Banner tone="critical"><p>{wins.error}</p></Banner>}
+          {wins?.data?.message && (!wins.data.wins || wins.data.wins.length === 0) && (
+            <Text variant="bodySm" tone="subdued">{wins.data.message}</Text>
+          )}
+          {wins?.data?.wins?.length > 0 && (
+            <div style={{ display:'grid', gap:10 }}>
+              {wins.data.wins.map((w, i) => (
+                <div key={i} style={{ background:'#fff', border:'1px solid #e1e3e5', borderRadius:8, padding:'12px 14px' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                    <strong style={{ fontSize:14 }}>"{w.keyword}"</strong>
+                    <span style={{ fontSize:11, color:'#6d7175' }}>pos {Number(w.current_position).toFixed(1)} · {w.impressions} imp</span>
+                  </div>
+                  {Array.isArray(w.suggestions) && w.suggestions.map((s, j) => (
+                    <div key={j} style={{ fontSize:12, marginTop:3 }}>• {s}</div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </Box>
+      </SCard>
+      )}
+
+      {/* Cannibalization */}
+      {!can('aiCannibalization') ? (
+        <PlanGate feature="aiCannibalization" required="pro">
+          <SCard title="🔍 Keyword cannibalization detector"><Box padding="400"><Text>Locked</Text></Box></SCard>
+        </PlanGate>
+      ) : (
+      <SCard
+        title="🔍 Keyword cannibalization detector"
+        action={<Button size="slim" onClick={() => load(setConflicts, seoAiApi.cannibalization)} loading={conflicts?.loading}>{conflicts?.data ? 'Refresh' : 'Detect conflicts'}</Button>}
+      >
+        <Box padding="400">
+          {!conflicts && <Text variant="bodySm" tone="subdued">Click "Detect conflicts" — AI looks for keywords where multiple pages compete and dilute each other's rankings.</Text>}
+          {conflicts?.error && <Banner tone="critical"><p>{conflicts.error}</p></Banner>}
+          {conflicts?.data?.message && (!conflicts.data.conflicts || conflicts.data.conflicts.length === 0) && (
+            <Text variant="bodySm" tone="subdued">{conflicts.data.message}</Text>
+          )}
+          {conflicts?.data?.conflicts?.length === 0 && !conflicts?.data?.message && (
+            <Text variant="bodySm" tone="subdued">No clear cannibalization detected.</Text>
+          )}
+          {conflicts?.data?.conflicts?.length > 0 && (
+            <div style={{ display:'grid', gap:10 }}>
+              {conflicts.data.conflicts.map((c, i) => (
+                <div key={i} style={{ background:'#fff', border:'1px solid #e1e3e5', borderRadius:8, padding:'12px 14px' }}>
+                  <strong style={{ fontSize:14 }}>"{c.keyword}"</strong>
+                  {Array.isArray(c.competing_pages) && c.competing_pages.length > 0 && (
+                    <div style={{ fontSize:12, color:'#6d7175', marginTop:6 }}>
+                      Competing pages: {c.competing_pages.join(', ')}
+                    </div>
+                  )}
+                  {c.winner_recommendation && (
+                    <div style={{ fontSize:12, marginTop:4 }}><strong>Winner:</strong> {c.winner_recommendation}</div>
+                  )}
+                  {c.what_to_do && (
+                    <div style={{ fontSize:12, marginTop:2 }}><strong>Do:</strong> {c.what_to_do}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Box>
+      </SCard>
+      )}
+
+      {/* Meta suggestions */}
+      {!can('aiMetaRewrite') ? (
+        <PlanGate feature="aiMetaRewrite" required="growth">
+          <SCard title="✏️ Rewrite low-CTR meta tags"><Box padding="400"><Text>Locked</Text></Box></SCard>
+        </PlanGate>
+      ) : (
+      <SCard
+        title="✏️ Rewrite low-CTR meta tags"
+        action={<Button size="slim" onClick={() => load(setMetas, seoAiApi.metaSuggestions)} loading={metas?.loading}>{metas?.data ? 'Refresh' : 'Suggest rewrites'}</Button>}
+      >
+        <Box padding="400">
+          {!metas && <Text variant="bodySm" tone="subdued">Click "Suggest rewrites" — AI finds pages with high impressions but low CTR and rewrites their meta title + description for higher click-through.</Text>}
+          {metas?.error && <Banner tone="critical"><p>{metas.error}</p></Banner>}
+          {metas?.data?.message && (!metas.data.suggestions || metas.data.suggestions.length === 0) && (
+            <Text variant="bodySm" tone="subdued">{metas.data.message}</Text>
+          )}
+          {metas?.data?.suggestions?.length > 0 && (
+            <div style={{ display:'grid', gap:10 }}>
+              {metas.data.suggestions.map((s, i) => (
+                <div key={i} style={{ background:'#fff', border:'1px solid #e1e3e5', borderRadius:8, padding:'12px 14px' }}>
+                  <div style={{ fontSize:12, color:'#0870d9', wordBreak:'break-all' }}>{s.url}</div>
+                  <div style={{ fontSize:11, color:'#6d7175', marginTop:2 }}>
+                    {s.impressions} impressions · CTR {(s.current_ctr * 100 || s.current_ctr).toFixed(2)}%
+                  </div>
+                  <div style={{ marginTop:8 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#6d7175', textTransform:'uppercase' }}>New title</div>
+                    <div style={{ fontSize:13, marginTop:2 }}>{s.suggested_title}</div>
+                  </div>
+                  <div style={{ marginTop:6 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#6d7175', textTransform:'uppercase' }}>New description</div>
+                    <div style={{ fontSize:13, marginTop:2 }}>{s.suggested_description}</div>
+                  </div>
+                  {s.why && <div style={{ fontSize:12, color:'#6d7175', marginTop:6 }}>Why: {s.why}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </Box>
+      </SCard>
+      )}
+    </div>
   );
 }
 

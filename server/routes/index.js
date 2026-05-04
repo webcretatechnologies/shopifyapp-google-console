@@ -15,5 +15,9 @@ router.use('/ai-visibility', require('./aiVisibility'));
 router.use('/content', require('./content'));
 router.use('/faqs', require('./faqs'));
 router.use('/structured-markup', require('./structuredMarkup'));
+router.use('/seo-ai', require('./seoAi'));
+router.use('/analytics-ai', require('./analyticsAi'));
+router.use('/ai-chat', require('./aiChat'));
+router.use('/print', require('./printReports'));
 
 module.exports = router;

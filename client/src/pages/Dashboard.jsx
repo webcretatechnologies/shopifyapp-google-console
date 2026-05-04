@@ -3,13 +3,13 @@ import { useQuery } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Page, Card, Text, Banner, Button, ButtonGroup, BlockStack, InlineStack,
-  Box, Tabs, Spinner, Divider, Badge,
+  Box, Tabs, Divider, Badge, Link, DataTable, SkeletonBodyText,
+  SkeletonDisplayText, EmptyState, InlineGrid,
 } from '@shopify/polaris';
 import {
-  AreaChart, Area, LineChart, Line, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-} from 'recharts';
-import { analyticsApi } from '../api';
+  LineChart, BarChart, SimpleBarChart, ComboChart, ChartSkeleton,
+} from '@shopify/polaris-viz';
+import { analyticsApi, analyticsAiApi } from '../api';
 import { useShop } from '../context/ShopContext';
 import { usePlan, downloadCSV } from '../hooks/usePlan';
 import PlanGate from '../components/PlanGate';
@@ -22,6 +22,9 @@ const PERIODS = [
   { label: '28 Days',  value: '28d' },
   { label: '3 Months', value: '90d' },
 ];
+
+const CHART_HEIGHT = 280;
+const MINI_CHART_HEIGHT = 200;
 
 function fmt(n) { return (n || 0).toLocaleString(); }
 function fmtPct(n) { return `${parseFloat(n || 0).toFixed(2)}%`; }
@@ -53,18 +56,18 @@ function PeriodSelector({ value, onChange }) {
   );
 }
 
-function KPICard({ label, value, sub, color = '#202223' }) {
+function KPICard({ label, value, sub, loading }) {
   return (
     <Card>
-      <Box padding="400">
-        <BlockStack gap="100">
-          <Text variant="bodySm" tone="subdued">{label}</Text>
-          <Text variant="heading2xl" as="p" fontWeight="bold">
-            <span style={{ color }}>{value}</span>
-          </Text>
-          {sub && <Text variant="bodySm" tone="subdued">{sub}</Text>}
-        </BlockStack>
-      </Box>
+      <BlockStack gap="100">
+        <Text variant="bodySm" tone="subdued">{label}</Text>
+        {loading ? (
+          <SkeletonDisplayText size="medium" />
+        ) : (
+          <Text variant="headingXl" as="p" fontWeight="bold">{value}</Text>
+        )}
+        {sub && <Text variant="bodySm" tone="subdued">{sub}</Text>}
+      </BlockStack>
     </Card>
   );
 }
@@ -72,7 +75,7 @@ function KPICard({ label, value, sub, color = '#202223' }) {
 function SectionHeader({ title, onExport, exportLabel = 'Export CSV' }) {
   return (
     <InlineStack align="space-between" blockAlign="center">
-      <Text variant="headingMd" fontWeight="semibold">{title}</Text>
+      <Text variant="headingMd" fontWeight="semibold" as="h3">{title}</Text>
       {onExport && (
         <Button size="slim" onClick={onExport}>{exportLabel}</Button>
       )}
@@ -80,61 +83,54 @@ function SectionHeader({ title, onExport, exportLabel = 'Export CSV' }) {
   );
 }
 
-const thS = { padding: '10px 14px', textAlign: 'left', color: '#6d7175', fontWeight: 600, fontSize: 12, borderBottom: '1px solid #e1e3e5', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.4px' };
-const tdS = { padding: '10px 14px', borderBottom: '1px solid #f1f2f3', fontSize: 13, color: '#202223' };
-const tdR = { ...tdS, textAlign: 'right' };
-
-function DataTable({ columns, rows, emptyText = 'No data available.' }) {
-  if (!rows || !rows.length) {
-    return <Box padding="600" textAlign="center"><Text tone="subdued">{emptyText}</Text></Box>;
-  }
-  return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ background: '#fafbfb' }}>
-            {columns.map(c => <th key={c.key} style={c.right ? { ...thS, textAlign: 'right' } : thS}>{c.label}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#fafbfb' }}>
-              {columns.map(c => (
-                <td key={c.key} style={c.right ? tdR : tdS}>
-                  {c.render ? c.render(row[c.key], row) : (row[c.key] ?? '—')}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function PositionBadge({ pos }) {
   const p = parseFloat(pos || 0);
-  const bg = p <= 3 ? '#e3f1df' : p <= 10 ? '#fff5ea' : '#f6f6f7';
-  const color = p <= 3 ? '#008060' : p <= 10 ? '#c05717' : '#6d7175';
+  const tone = p <= 3 ? 'success' : p <= 10 ? 'warning' : undefined;
+  return <Badge tone={tone}>{`#${p.toFixed(1)}`}</Badge>;
+}
+
+function ChartBlock({ title, loading, hasData = true, emptyText, height = CHART_HEIGHT, children }) {
   return (
-    <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 12, background: bg, color, fontWeight: 700, fontSize: 11 }}>
-      #{p.toFixed(1)}
-    </span>
+    <Card>
+      <BlockStack gap="300">
+        <Text variant="headingMd" fontWeight="semibold" as="h3">{title}</Text>
+        <Box minHeight={`${height}px`}>
+          {loading ? (
+            <ChartSkeleton type="Line" />
+          ) : !hasData ? (
+            <Box paddingBlock="600">
+              <Text alignment="center" tone="subdued">{emptyText || 'No data available.'}</Text>
+            </Box>
+          ) : children}
+        </Box>
+      </BlockStack>
+    </Card>
   );
 }
 
-function LoadingBox() {
-  return <Box padding="800" textAlign="center"><Spinner /></Box>;
+function TableEmpty({ text }) {
+  return (
+    <Box paddingBlock="600">
+      <Text alignment="center" tone="subdued">{text}</Text>
+    </Box>
+  );
 }
 
-const CHART_COLORS = {
-  sessions: '#1a1a1a',
-  users: '#50b83c',
-  new_users: '#47c1bf',
-  clicks: '#1a1a1a',
-  impressions: '#303030',
-  spend: '#e67e22',
-};
+// ── Polaris-viz data shapers ──────────────────────────────────────────────────
+
+function toLineSeries(rows, key, name) {
+  return {
+    name,
+    data: rows.map(r => ({ key: fmtDate(r.date), value: Number(r[key] || 0) })),
+  };
+}
+
+function toBarSeries(rows, key, name, labelKey) {
+  return {
+    name,
+    data: rows.map(r => ({ key: String(r[labelKey] ?? ''), value: Number(r[key] || 0) })),
+  };
+}
 
 // ── GA4 Tab ───────────────────────────────────────────────────────────────────
 
@@ -156,131 +152,118 @@ function GA4Tab({ period }) {
   const avgBounce = sessions.length ? (sessions.reduce((a, d) => a + (d.bounce_rate || 0), 0) / sessions.length) : 0;
   const avgDur    = sessions.length ? (sessions.reduce((a, d) => a + (d.avg_session_duration || 0), 0) / sessions.length) : 0;
 
-  const chartData = sessions.map(d => ({ ...d, date: fmtDate(d.date) }));
+  const sessionsSeries = [
+    toLineSeries(sessions, 'sessions', 'Sessions'),
+    toLineSeries(sessions, 'users', 'Users'),
+  ];
+  const sourcesSeries = [
+    toBarSeries(sources.slice(0, 8), 'sessions', 'Sessions', 'channel'),
+  ];
 
   const exportPages = () => downloadCSV(pages, `ga4-pages-${period}.csv`);
   const exportSources = () => downloadCSV(sources, `ga4-sources-${period}.csv`);
   const exportCountries = () => downloadCSV(countries, `ga4-countries-${period}.csv`);
 
+  // Polaris DataTable rows
+  const sourceRows = sources.map(r => [r.channel || '—', fmt(r.sessions), fmt(r.users)]);
+  const countryRows = countries.map(r => [r.country || '—', fmt(r.sessions), fmt(r.users)]);
+  const pageRows = pages.map(r => {
+    const href = buildPageUrl(r.path, baseUrl);
+    return [
+      <BlockStack gap="050" key={r.path}>
+        <Text variant="bodyMd" fontWeight="medium">{r.title || '(No title)'}</Text>
+        {r.path && (href
+          ? <Link url={href} external removeUnderline monochrome={false}>{r.path}</Link>
+          : <Text variant="bodySm" tone="subdued">{r.path}</Text>
+        )}
+      </BlockStack>,
+      fmt(r.views),
+      fmt(r.sessions),
+    ];
+  });
+
   return (
     <BlockStack gap="500">
 
       {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
-        <KPICard label="Total Sessions"     value={lS ? '—' : fmt(totals.sessions)} color="#1a1a1a" />
-        <KPICard label="Total Users"        value={lS ? '—' : fmt(totals.users)}    color="#50b83c" />
-        <KPICard label="New Users"          value={lS ? '—' : fmt(totals.new_users)}color="#47c1bf" />
-        <KPICard label="Avg Bounce Rate"    value={lS ? '—' : fmtPct(avgBounce)}    color="#e67e22" />
-        <KPICard label="Avg Session Duration" value={lS ? '—' : fmtSec(avgDur)}     color="#303030" />
-      </div>
+      <InlineGrid columns={{ xs: 2, md: 5 }} gap="400">
+        <KPICard label="Total Sessions"       loading={lS} value={fmt(totals.sessions)} />
+        <KPICard label="Total Users"          loading={lS} value={fmt(totals.users)} />
+        <KPICard label="New Users"            loading={lS} value={fmt(totals.new_users)} />
+        <KPICard label="Avg Bounce Rate"      loading={lS} value={fmtPct(avgBounce)} />
+        <KPICard label="Avg Session Duration" loading={lS} value={fmtSec(avgDur)} />
+      </InlineGrid>
 
       {/* Sessions + Users chart */}
-      <Card>
-        <Box padding="400">
-          <BlockStack gap="300">
-            <Text variant="headingMd" fontWeight="semibold">Sessions &amp; Users Over Time</Text>
-            {lS ? <LoadingBox /> : (
-              <div style={{ height: 280 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 8, right: 20, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6d7175' }} axisLine={{ stroke:'#e1e3e5' }} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: '#6d7175' }} width={45} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(v, n) => [fmt(v), n]} />
-                    <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" iconSize={8} />
-                    <Line type="monotone" dataKey="sessions" stroke="#1a1a1a" strokeWidth={2} dot={false} name="Sessions" />
-                    <Line type="monotone" dataKey="users"    stroke="#50b83c" strokeWidth={2} dot={false} name="Users" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </BlockStack>
-        </Box>
-      </Card>
+      <ChartBlock
+        title="Sessions & Users Over Time"
+        loading={lS}
+        hasData={sessions.length > 0}
+        emptyText="No session data yet for the selected period."
+      >
+        <div style={{ height: CHART_HEIGHT }}>
+          <LineChart data={sessionsSeries} state="Success" isAnimated />
+        </div>
+      </ChartBlock>
 
       {/* Traffic Sources + Countries side by side */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-
-        {/* Traffic Sources */}
+      <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
         <Card>
-          <Box padding="400">
-            <BlockStack gap="300">
-              <SectionHeader title="Traffic Sources" onExport={exportSources} />
-              {lSrc ? <LoadingBox /> : (
-                <>
-                  <div style={{ height: 220 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={sources.slice(0, 8)} layout="vertical" margin={{ left: 0, right: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" horizontal={false} />
-                        <XAxis type="number" tick={{ fontSize: 11 }} />
-                        <YAxis type="category" dataKey="channel" width={110} tick={{ fontSize: 11, fill: '#202223' }} />
-                        <Tooltip formatter={(v) => [fmt(v), 'Sessions']} />
-                        <Bar dataKey="sessions" fill="#1a1a1a" radius={[0, 4, 4, 0]} name="Sessions" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <DataTable
-                    columns={[
-                      { key: 'channel', label: 'Channel' },
-                      { key: 'sessions', label: 'Sessions', right: true, render: v => fmt(v) },
-                      { key: 'users',    label: 'Users',    right: true, render: v => fmt(v) },
-                    ]}
-                    rows={sources}
-                    emptyText="No traffic source data available."
-                  />
-                </>
-              )}
-            </BlockStack>
-          </Box>
-        </Card>
-
-        {/* Top Countries */}
-        <Card>
-          <Box padding="400">
-            <BlockStack gap="300">
-              <SectionHeader title="Top Countries" onExport={exportCountries} />
-              {lC ? <LoadingBox /> : (
+          <BlockStack gap="300">
+            <SectionHeader title="Traffic Sources" onExport={sources.length ? exportSources : null} />
+            {lSrc ? (
+              <ChartSkeleton type="Bar" />
+            ) : sources.length === 0 ? (
+              <TableEmpty text="No traffic source data available." />
+            ) : (
+              <>
+                <div style={{ height: 220 }}>
+                  <SimpleBarChart data={sourcesSeries} />
+                </div>
+                <Divider />
                 <DataTable
-                  columns={[
-                    { key: 'country',  label: 'Country' },
-                    { key: 'sessions', label: 'Sessions', right: true, render: v => fmt(v) },
-                    { key: 'users',    label: 'Users',    right: true, render: v => fmt(v) },
-                  ]}
-                  rows={countries}
-                  emptyText="No country data available."
+                  columnContentTypes={['text', 'numeric', 'numeric']}
+                  headings={['Channel', 'Sessions', 'Users']}
+                  rows={sourceRows}
                 />
-              )}
-            </BlockStack>
-          </Box>
+              </>
+            )}
+          </BlockStack>
         </Card>
-      </div>
+
+        <Card>
+          <BlockStack gap="300">
+            <SectionHeader title="Top Countries" onExport={countries.length ? exportCountries : null} />
+            {lC ? (
+              <SkeletonBodyText lines={6} />
+            ) : countries.length === 0 ? (
+              <TableEmpty text="No country data available." />
+            ) : (
+              <DataTable
+                columnContentTypes={['text', 'numeric', 'numeric']}
+                headings={['Country', 'Sessions', 'Users']}
+                rows={countryRows}
+              />
+            )}
+          </BlockStack>
+        </Card>
+      </InlineGrid>
 
       {/* Top Pages */}
       <Card padding="0">
         <Box padding="400">
-          <SectionHeader title="Top Pages" onExport={exportPages} />
+          <SectionHeader title="Top Pages" onExport={pages.length ? exportPages : null} />
         </Box>
         <Divider />
-        {lP ? <LoadingBox /> : (
+        {lP ? (
+          <Box padding="400"><SkeletonBodyText lines={6} /></Box>
+        ) : pages.length === 0 ? (
+          <TableEmpty text="No page data available. Make sure your GA4 property is configured." />
+        ) : (
           <DataTable
-            columns={[
-              { key: 'title', label: 'Page Title',  render: (v, row) => {
-                const href = buildPageUrl(row.path, baseUrl);
-                return (
-                  <div>
-                    <div style={{ fontWeight: 500 }}>{v || '(No title)'}</div>
-                    {row.path && (href
-                      ? <a href={href} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color:'#1a73e8', marginTop:2, display:'block', textDecoration:'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:320 }} title={href} onMouseOver={e=>e.currentTarget.style.textDecoration='underline'} onMouseOut={e=>e.currentTarget.style.textDecoration='none'}>{row.path}</a>
-                      : <span style={{ fontSize:11, color:'#6d7175', marginTop:2, display:'block' }}>{row.path}</span>
-                    )}
-                  </div>
-                );
-              }},
-              { key: 'views',    label: 'Page Views', right: true, render: v => fmt(v) },
-              { key: 'sessions', label: 'Sessions',   right: true, render: v => fmt(v) },
-            ]}
-            rows={pages}
-            emptyText="No page data available. Make sure GA4 property is configured."
+            columnContentTypes={['text', 'numeric', 'numeric']}
+            headings={['Page', 'Page Views', 'Sessions']}
+            rows={pageRows}
           />
         )}
       </Card>
@@ -306,111 +289,80 @@ function SearchConsoleTab({ period }) {
   const avgCtr = overview.length ? (overview.reduce((a, d) => a + (d.ctr || 0), 0) / overview.length) : 0;
   const avgPos = overview.length ? (overview.reduce((a, d) => a + (d.position || 0), 0) / overview.length) : 0;
 
-  const chartData = overview.map(d => ({ ...d, date: fmtDate(d.date) }));
+  const clicksImpressionsCombo = [
+    { shape: 'Bar',  series: [toLineSeries(overview, 'impressions', 'Impressions')] },
+    { shape: 'Line', series: [toLineSeries(overview, 'clicks',      'Clicks')] },
+  ];
+
+  const ctrSeries = [toLineSeries(overview, 'ctr', 'CTR (%)')];
+  const positionSeries = [toLineSeries(overview, 'position', 'Avg Position')];
 
   const exportQueries = () => downloadCSV(queries, `sc-queries-${period}.csv`);
   const exportPages   = () => downloadCSV(scPages,  `sc-pages-${period}.csv`);
 
-  const scTabs = [
-    { id: 'queries', content: 'Queries' },
-    { id: 'pages',   content: 'Pages' },
-  ];
+  // Polaris DataTable rows
+  const queryRows = queries.map(r => [
+    <Text variant="bodyMd" fontWeight="medium" key={r.keyword}>{r.keyword}</Text>,
+    <strong key="c">{fmt(r.clicks)}</strong>,
+    fmt(r.impressions),
+    fmtPct(r.ctr),
+    <PositionBadge key="p" pos={r.position} />,
+  ]);
 
-  const queryCols = [
-    { key: 'keyword',     label: 'Query',       render: v => <span style={{ fontWeight: 500 }}>{v}</span> },
-    { key: 'clicks',      label: 'Clicks',      right: true, render: v => <strong>{fmt(v)}</strong> },
-    { key: 'impressions', label: 'Impressions', right: true, render: v => fmt(v) },
-    { key: 'ctr',         label: 'CTR',         right: true, render: v => fmtPct(v) },
-    { key: 'position',    label: 'Position',    right: true, render: v => <PositionBadge pos={v} /> },
-  ];
-
-  const pageCols = [
-    { key: 'page',        label: 'Page URL',    render: v => <a href={v} target="_blank" rel="noopener noreferrer" style={{ fontSize:12, color:'#1a73e8', wordBreak:'break-all', textDecoration:'none' }} title={v} onMouseOver={e=>e.currentTarget.style.textDecoration='underline'} onMouseOut={e=>e.currentTarget.style.textDecoration='none'}>{v}</a> },
-    { key: 'clicks',      label: 'Clicks',      right: true, render: v => <strong>{fmt(v)}</strong> },
-    { key: 'impressions', label: 'Impressions', right: true, render: v => fmt(v) },
-    { key: 'ctr',         label: 'CTR',         right: true, render: v => fmtPct(v) },
-    { key: 'position',    label: 'Position',    right: true, render: v => <PositionBadge pos={v} /> },
-  ];
+  const pageRows = scPages.map(r => [
+    <Link key={r.page} url={r.page} external monochrome={false}>{r.page}</Link>,
+    <strong key="c">{fmt(r.clicks)}</strong>,
+    fmt(r.impressions),
+    fmtPct(r.ctr),
+    <PositionBadge key="p" pos={r.position} />,
+  ]);
 
   return (
     <BlockStack gap="500">
 
       {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-        <KPICard label="Total Clicks"      value={lO ? '—' : fmt(totals.clicks)}      color="#1a1a1a" sub="organic search" />
-        <KPICard label="Total Impressions" value={lO ? '—' : fmt(totals.impressions)} color="#303030" sub="search results shown" />
-        <KPICard label="Avg CTR"           value={lO ? '—' : fmtPct(avgCtr)}          color="#50b83c" sub="click-through rate" />
-        <KPICard label="Avg Position"      value={lO ? '—' : `#${avgPos.toFixed(1)}`} color="#e67e22" sub="search ranking" />
-      </div>
+      <InlineGrid columns={{ xs: 2, md: 4 }} gap="400">
+        <KPICard label="Total Clicks"      loading={lO} value={fmt(totals.clicks)}      sub="organic search" />
+        <KPICard label="Total Impressions" loading={lO} value={fmt(totals.impressions)} sub="search results shown" />
+        <KPICard label="Avg CTR"           loading={lO} value={fmtPct(avgCtr)}          sub="click-through rate" />
+        <KPICard label="Avg Position"      loading={lO} value={`#${avgPos.toFixed(1)}`} sub="search ranking (lower is better)" />
+      </InlineGrid>
 
-      {/* Performance chart */}
-      <Card>
-        <Box padding="400">
-          <BlockStack gap="300">
-            <Text variant="headingMd" fontWeight="semibold">Clicks &amp; Impressions Over Time</Text>
-            {lO ? <LoadingBox /> : (
-              <div style={{ height: 280 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 8, right: 20, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6d7175' }} axisLine={{ stroke:'#e1e3e5' }} tickLine={false} />
-                    <YAxis yAxisId="left"  tick={{ fontSize: 11, fill: '#6d7175' }} width={50} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#6d7175' }} width={65} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(v, n) => [fmt(v), n]} />
-                    <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" iconSize={8} />
-                    <Line yAxisId="left"  type="monotone" dataKey="clicks"      stroke="#1a1a1a" strokeWidth={2} dot={false} name="Clicks" />
-                    <Line yAxisId="right" type="monotone" dataKey="impressions" stroke="#303030" strokeWidth={2} dot={false} name="Impressions" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </BlockStack>
-        </Box>
-      </Card>
+      {/* Clicks + Impressions combo chart */}
+      <ChartBlock
+        title="Clicks & Impressions Over Time"
+        loading={lO}
+        hasData={overview.length > 0}
+        emptyText="No Search Console data yet. Make sure your property is configured."
+      >
+        <div style={{ height: CHART_HEIGHT }}>
+          <ComboChart data={clicksImpressionsCombo} state="Success" isAnimated />
+        </div>
+      </ChartBlock>
 
-      {/* CTR + Position mini chart */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <Card>
-          <Box padding="400">
-            <BlockStack gap="200">
-              <Text variant="headingMd" fontWeight="semibold">CTR Over Time</Text>
-              {lO ? <LoadingBox /> : (
-                <div style={{ height: 180 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6d7175' }} />
-                      <YAxis tick={{ fontSize: 10, fill: '#6d7175' }} width={40} tickFormatter={v => `${v.toFixed(1)}%`} />
-                      <Tooltip formatter={v => [`${v.toFixed(2)}%`, 'CTR']} />
-                      <Line type="monotone" dataKey="ctr" stroke="#50b83c" strokeWidth={2} dot={false} name="CTR %" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </BlockStack>
-          </Box>
-        </Card>
-        <Card>
-          <Box padding="400">
-            <BlockStack gap="200">
-              <Text variant="headingMd" fontWeight="semibold">Avg Position Over Time</Text>
-              {lO ? <LoadingBox /> : (
-                <div style={{ height: 180 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6d7175' }} />
-                      <YAxis tick={{ fontSize: 10, fill: '#6d7175' }} width={40} reversed />
-                      <Tooltip formatter={v => [`#${v.toFixed(1)}`, 'Position']} />
-                      <Line type="monotone" dataKey="position" stroke="#e67e22" strokeWidth={2} dot={false} name="Position" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </BlockStack>
-          </Box>
-        </Card>
-      </div>
+      {/* CTR + Position mini charts */}
+      <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
+        <ChartBlock
+          title="CTR Over Time"
+          loading={lO}
+          hasData={overview.length > 0}
+          height={MINI_CHART_HEIGHT}
+        >
+          <div style={{ height: MINI_CHART_HEIGHT }}>
+            <LineChart data={ctrSeries} state="Success" isAnimated />
+          </div>
+        </ChartBlock>
+        <ChartBlock
+          title="Avg Position Over Time"
+          loading={lO}
+          hasData={overview.length > 0}
+          height={MINI_CHART_HEIGHT}
+        >
+          <div style={{ height: MINI_CHART_HEIGHT }}>
+            <LineChart data={positionSeries} state="Success" isAnimated />
+          </div>
+        </ChartBlock>
+      </InlineGrid>
 
       {/* Queries / Pages tabs */}
       <Card padding="0">
@@ -427,8 +379,24 @@ function SearchConsoleTab({ period }) {
               <Button onClick={scTab === 0 ? exportQueries : exportPages}>Export CSV</Button>
             </InlineStack>
           </Box>
-          {scTab === 0 && (lQ ? <LoadingBox /> : <DataTable columns={queryCols} rows={queries} emptyText="No query data. Configure Search Console property first." />)}
-          {scTab === 1 && (lP ? <LoadingBox /> : <DataTable columns={pageCols}  rows={scPages} emptyText="No page data available." />)}
+          {scTab === 0 && (
+            lQ ? <Box padding="400"><SkeletonBodyText lines={6} /></Box>
+            : queries.length === 0 ? <TableEmpty text="No query data. Configure Search Console property first." />
+            : <DataTable
+                columnContentTypes={['text', 'numeric', 'numeric', 'numeric', 'text']}
+                headings={['Query', 'Clicks', 'Impressions', 'CTR', 'Position']}
+                rows={queryRows}
+              />
+          )}
+          {scTab === 1 && (
+            lP ? <Box padding="400"><SkeletonBodyText lines={6} /></Box>
+            : scPages.length === 0 ? <TableEmpty text="No page data available." />
+            : <DataTable
+                columnContentTypes={['text', 'numeric', 'numeric', 'numeric', 'text']}
+                headings={['Page URL', 'Clicks', 'Impressions', 'CTR', 'Position']}
+                rows={pageRows}
+              />
+          )}
         </Tabs>
       </Card>
 
@@ -450,59 +418,67 @@ function AdsTab({ period }) {
 
   const exportAds = () => downloadCSV(campaigns, `ads-campaigns-${period}.csv`);
 
+  const campaignRows = campaigns.map(c => [
+    <Text variant="bodyMd" fontWeight="medium" key={c.campaign}>{c.campaign}</Text>,
+    <Badge key="s" tone={c.status === 'ENABLED' ? 'success' : undefined}>{c.status || '—'}</Badge>,
+    fmt(c.clicks),
+    fmt(c.impressions),
+    fmtPct(c.ctr),
+    `₹${parseFloat(c.cost || 0).toFixed(2)}`,
+    fmt(c.conversions),
+    c.roas ? `${parseFloat(c.roas).toFixed(2)}x` : '—',
+  ]);
+
+  const top10 = campaigns.slice(0, 10);
+  const spendVsConvCombo = [
+    {
+      shape: 'Bar',
+      series: [{
+        name: 'Spend (₹)',
+        data: top10.map(c => ({ key: c.campaign, value: Number(c.cost || 0) })),
+      }],
+    },
+    {
+      shape: 'Line',
+      series: [{
+        name: 'Conversions',
+        data: top10.map(c => ({ key: c.campaign, value: Number(c.conversions || 0) })),
+      }],
+    },
+  ];
+
   return (
     <BlockStack gap="500">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-        <KPICard label="Total Clicks"       value={isLoading ? '—' : fmt(totals.clicks)}                          color="#1a1a1a" />
-        <KPICard label="Total Impressions"  value={isLoading ? '—' : fmt(totals.impressions)}                     color="#303030" />
-        <KPICard label="Total Spend"        value={isLoading ? '—' : `₹${(totals.cost || 0).toFixed(2)}`}         color="#e67e22" />
-        <KPICard label="Total Conversions"  value={isLoading ? '—' : fmt(totals.conversions)}                     color="#50b83c" />
-      </div>
+      <InlineGrid columns={{ xs: 2, md: 4 }} gap="400">
+        <KPICard label="Total Clicks"       loading={isLoading} value={fmt(totals.clicks)} />
+        <KPICard label="Total Impressions"  loading={isLoading} value={fmt(totals.impressions)} />
+        <KPICard label="Total Spend"        loading={isLoading} value={`₹${(totals.cost || 0).toFixed(2)}`} />
+        <KPICard label="Total Conversions"  loading={isLoading} value={fmt(totals.conversions)} />
+      </InlineGrid>
 
       <Card padding="0">
         <Box padding="400" borderBlockEndWidth="025" borderColor="border">
-          <SectionHeader title="Campaign Performance" onExport={exportAds} />
+          <SectionHeader title="Campaign Performance" onExport={campaigns.length ? exportAds : null} />
         </Box>
-        {isLoading ? <LoadingBox /> : (
+        {isLoading ? (
+          <Box padding="400"><SkeletonBodyText lines={6} /></Box>
+        ) : campaigns.length === 0 ? (
+          <TableEmpty text="No campaign data. Make sure Google Ads Customer ID is configured and ads are running." />
+        ) : (
           <DataTable
-            columns={[
-              { key: 'campaign',    label: 'Campaign Name', render: v => <span style={{ fontWeight: 500 }}>{v}</span> },
-              { key: 'status',      label: 'Status',        render: v => <Badge tone={v === 'ENABLED' ? 'success' : 'subdued'}>{v}</Badge> },
-              { key: 'clicks',      label: 'Clicks',        right: true, render: v => fmt(v) },
-              { key: 'impressions', label: 'Impressions',   right: true, render: v => fmt(v) },
-              { key: 'ctr',         label: 'CTR',           right: true, render: v => fmtPct(v) },
-              { key: 'cost',        label: 'Spend',         right: true, render: v => `₹${parseFloat(v || 0).toFixed(2)}` },
-              { key: 'conversions', label: 'Conversions',   right: true, render: v => fmt(v) },
-              { key: 'roas',        label: 'ROAS',          right: true, render: v => v ? `${parseFloat(v).toFixed(2)}x` : '—' },
-            ]}
-            rows={campaigns}
-            emptyText="No campaign data. Make sure Google Ads Customer ID is configured and ads are running."
+            columnContentTypes={['text', 'text', 'numeric', 'numeric', 'numeric', 'numeric', 'numeric', 'numeric']}
+            headings={['Campaign', 'Status', 'Clicks', 'Impressions', 'CTR', 'Spend', 'Conversions', 'ROAS']}
+            rows={campaignRows}
           />
         )}
       </Card>
 
       {campaigns.length > 0 && (
-        <Card>
-          <Box padding="400">
-            <BlockStack gap="300">
-              <Text variant="headingMd" fontWeight="semibold">Spend vs Conversions by Campaign</Text>
-              <div style={{ height: 260 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={campaigns.slice(0, 10)} margin={{ top: 4, right: 20, left: 0, bottom: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f3" />
-                    <XAxis dataKey="campaign" tick={{ fontSize: 10, fill: '#6d7175' }} angle={-30} textAnchor="end" />
-                    <YAxis yAxisId="left"  tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar yAxisId="left"  dataKey="cost"        name="Spend (₹)"    fill="#e67e22" radius={[4,4,0,0]} />
-                    <Bar yAxisId="right" dataKey="conversions" name="Conversions"   fill="#50b83c" radius={[4,4,0,0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </BlockStack>
-          </Box>
-        </Card>
+        <ChartBlock title="Spend vs Conversions by Campaign" loading={isLoading} hasData>
+          <div style={{ height: 280 }}>
+            <ComboChart data={spendVsConvCombo} state="Success" isAnimated />
+          </div>
+        </ChartBlock>
       )}
     </BlockStack>
   );
@@ -512,26 +488,26 @@ function AdsTab({ period }) {
 
 function StarterOverview() {
   const navigate = useNavigate();
-  const { data: overview } = useQuery('overview', analyticsApi.overview);
+  const { data: overview, isLoading } = useQuery('overview', analyticsApi.overview);
   const totals = overview?.totals || {};
   const keywords = overview?.top_keywords || [];
 
   return (
     <BlockStack gap="400">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-        <KPICard label="Total Sessions (30d)"   value={fmt(totals.sessions)}  color="#1a1a1a" />
-        <KPICard label="Total Users (30d)"      value={fmt(totals.users)}     color="#50b83c" />
-        <KPICard label="Ranked Keywords"        value={keywords.length}       color="#303030" />
-      </div>
+      <InlineGrid columns={{ xs: 1, md: 3 }} gap="400">
+        <KPICard label="Total Sessions (30d)" loading={isLoading} value={fmt(totals.sessions)} />
+        <KPICard label="Total Users (30d)"    loading={isLoading} value={fmt(totals.users)} />
+        <KPICard label="Ranked Keywords"      loading={isLoading} value={fmt(keywords.length)} />
+      </InlineGrid>
 
       <Banner
         title="Upgrade for full Analytics & Search Console reports"
         tone="info"
         action={{ content: 'View Plans', onAction: () => navigate('/billing' + window.location.search) }}
       >
-        <Text variant="bodySm">
+        <Text variant="bodySm" as="p">
           Growth plan unlocks: GA4 sessions/users charts, traffic sources, top countries, top pages,
-          Search Console performance with clicks/impressions/CTR/position charts, Queries &amp; Pages reports,
+          Search Console performance with clicks/impressions/CTR/position charts, Queries & Pages reports,
           Google Ads campaigns, and CSV exports.
         </Text>
       </Banner>
@@ -560,9 +536,42 @@ function buildPageUrl(path, baseUrl) {
   return `${baseUrl}${path.startsWith('/') ? path : '/' + path}`;
 }
 
+// AI-generated 3-bullet summary of the past week. Tries to load on mount;
+// silently hides if there's not enough data yet.
+function WeeklyDigestCard() {
+  const { can } = usePlan();
+  const enabled = can('aiWeeklyDigest');
+  const { data, isLoading, error } = useQuery(
+    'analytics-weekly-digest',
+    analyticsAiApi.weeklyDigest,
+    { staleTime: 30 * 60 * 1000, refetchOnWindowFocus: false, retry: false, enabled },
+  );
+  if (!enabled) return null;
+  if (isLoading || error) return null;
+  if (!data) return null;
+  const bullets = Array.isArray(data.bullets) ? data.bullets : [];
+  if (!bullets.length) return null;
+  return (
+    <Card>
+      <BlockStack gap="200">
+        <InlineStack gap="200" blockAlign="center">
+          <Text variant="bodyLg">✨</Text>
+          <Text variant="headingSm" fontWeight="semibold" as="h3">
+            {data.headline || 'This week at a glance'}
+          </Text>
+        </InlineStack>
+        <BlockStack gap="100">
+          {bullets.map((b, i) => (
+            <Text key={i} variant="bodySm" as="p">• {b}</Text>
+          ))}
+        </BlockStack>
+      </BlockStack>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const { googleStatus } = useShop();
-  const baseUrl = getBaseUrl(googleStatus?.account?.search_console_property);
   const { can, planName } = usePlan();
   // Render the Advanced view only when the plan explicitly grants it.
   // Otherwise fall back to the Basic (Starter-style) overview — even on
@@ -575,13 +584,15 @@ export default function Dashboard() {
   if (!googleStatus?.connected) {
     return (
       <Page title="Dashboard">
-        <Banner
-          title="Connect Google to get started"
-          tone="info"
-          action={{ content: 'Connect Google', url: '/connect-google' }}
-        >
-          <p>Connect your Google account to see Analytics, Search Console, and Ads data.</p>
-        </Banner>
+        <Card>
+          <EmptyState
+            heading="Connect Google to get started"
+            action={{ content: 'Connect Google', url: '/connect-google' }}
+            image=""
+          >
+            <p>Connect your Google account to see Analytics, Search Console, and Ads data inside this dashboard.</p>
+          </EmptyState>
+        </Card>
       </Page>
     );
   }
@@ -592,6 +603,8 @@ export default function Dashboard() {
       subtitle={`${planName} plan`}
     >
       <BlockStack gap="500">
+
+        <WeeklyDigestCard />
 
         {showBasicOnly ? (
           <StarterOverview />

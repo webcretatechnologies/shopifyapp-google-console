@@ -5,6 +5,7 @@ const { getLowStockAlerts, getProductSeoReport, getSeoSuggestions, getAdsOrderCo
 const { syncAllOrders } = require('../services/orderSync');
 const { fetchAndCacheForShop } = require('../jobs/scheduler');
 const { Shop, AnalyticsCache, GoogleAccount } = require('../models');
+const { requireFeature } = require('../services/planFeatures');
 
 router.get('/alerts', shopifyAuth, async (req, res) => {
   try {
@@ -14,6 +15,39 @@ router.get('/alerts', shopifyAuth, async (req, res) => {
   } catch (err) {
     console.error('[Insights] alerts error:', err.message);
     res.status(500).json({ error: 'Failed to load alerts' });
+  }
+});
+
+// AI-generated "why prioritize this restock" reasoning for the current
+// stock alerts. Returns one short line per alert, keyed by product_id.
+router.post('/alerts/ai-reasoning', shopifyAuth, requireFeature('aiRestockReasoning'), async (req, res) => {
+  try {
+    const { askLLMJson } = require('../services/llm');
+    const threshold = parseInt(req.query.threshold || '5');
+    const alerts = await getLowStockAlerts(req.shop.id, threshold);
+    if (!alerts.length) return res.json({ reasoning: {} });
+
+    // Cap to top 10 by traffic to keep prompt small.
+    const top = alerts
+      .slice()
+      .sort((a, b) => (b.monthly_clicks || 0) - (a.monthly_clicks || 0))
+      .slice(0, 10);
+
+    const userPrompt = `Each line below is a stock alert: a Shopify product that's low on inventory but is still drawing organic Google traffic. For each, write ONE short sentence on why this product should be prioritized for restock — referencing the actual numbers.
+
+${top.map(a => `- ${a.product_title} | inventory ${a.inventory ?? 0} | ${a.monthly_clicks ?? 0} clicks/month from Google${a.monthly_impressions ? ` | ${a.monthly_impressions} impressions` : ''}`).join('\n')}
+
+Reply as JSON with key "reasoning" — an OBJECT keyed by the EXACT product_title where each value is the one-sentence reason.`;
+
+    const out = await askLLMJson(userPrompt, {
+      system: 'You are a merchandising consultant.',
+      maxTokens: 800,
+      temperature: 0.3,
+    });
+    res.json({ reasoning: out.reasoning || {} });
+  } catch (err) {
+    console.error('[Insights] ai-reasoning error:', err.message);
+    res.status(500).json({ error: 'Failed to generate reasoning' });
   }
 });
 

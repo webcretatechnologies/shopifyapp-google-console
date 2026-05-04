@@ -12,16 +12,18 @@ const TABS = [
   { id: 'general',       content: 'General',       accessibilityLabel: 'General',       panelID: 'general-panel' },
   { id: 'notifications', content: 'Notifications', accessibilityLabel: 'Notifications', panelID: 'notifications-panel' },
   { id: 'google',        content: 'Google API',    accessibilityLabel: 'Google API',    panelID: 'google-panel' },
+  { id: 'ai-keys',       content: 'AI API Keys',   accessibilityLabel: 'AI API Keys',   panelID: 'ai-keys-panel' },
 ];
 
 // Only events the merchant can opt out of. Welcome / Google connected /
 // Subscription updates are system events controlled by the super admin and
 // always send (they don't appear here).
 const EMAIL_EVENTS = [
-  { key: 'audit',        label: 'Site Audit complete',        help: 'After every Site Audit run finishes' },
-  { key: 'aiVisibility', label: 'AI Visibility run complete', help: 'After every AI Visibility analysis finishes' },
-  { key: 'stockAlerts',  label: 'Critical stock alerts',      help: 'When a high-traffic product goes out of stock' },
-  { key: 'weeklyReport', label: 'Weekly performance report',  help: 'Weekly summary digest — pick which day it lands below' },
+  { key: 'audit',         label: 'Site Audit complete',        help: 'After every Site Audit run finishes' },
+  { key: 'aiVisibility',  label: 'AI Visibility run complete', help: 'After every AI Visibility analysis finishes' },
+  { key: 'stockAlerts',   label: 'Critical stock alerts',      help: 'When a high-traffic product goes out of stock' },
+  { key: 'weeklyReport',  label: 'Weekly performance report',  help: 'Weekly summary digest — pick which day it lands below' },
+  { key: 'dailyBriefing', label: 'Daily AI briefing',          help: '✨ AI-generated "3 things to do today" email at 7 AM UTC. Off by default.' },
 ];
 
 const WEEKDAY_OPTIONS = [
@@ -383,6 +385,186 @@ function GoogleApiTab({ settings, googleStatus, onSave, onClear }) {
   );
 }
 
+// ── AI API Keys tab ─────────────────────────────────────────────────────────
+const LLM_PROVIDERS = [
+  {
+    id: 'openai', label: 'OpenAI (GPT-4o)',
+    placeholder: 'sk-...',
+    signupUrl: 'https://platform.openai.com/api-keys',
+    help: 'Pay-as-you-go. ~$0.15 per 1M input tokens. Best quality for AI features.',
+  },
+  {
+    id: 'anthropic', label: 'Anthropic (Claude)',
+    placeholder: 'sk-ant-...',
+    signupUrl: 'https://console.anthropic.com/settings/keys',
+    help: 'Pay-as-you-go. ~$0.80 per 1M input tokens for Claude Haiku.',
+  },
+  {
+    id: 'gemini', label: 'Google Gemini',
+    placeholder: 'AIza...',
+    signupUrl: 'https://aistudio.google.com/apikey',
+    help: '1500 requests/day free on Flash models. No credit card required.',
+  },
+  {
+    id: 'groq', label: 'Groq (Llama 3.3)',
+    placeholder: 'gsk_...',
+    signupUrl: 'https://console.groq.com/keys',
+    help: 'Generous free tier. Very fast inference. No credit card required.',
+  },
+  {
+    id: 'openrouter', label: 'OpenRouter',
+    placeholder: 'sk-or-...',
+    signupUrl: 'https://openrouter.ai/keys',
+    help: 'Access to free models (gpt-oss, deepseek). No credit card required for :free models.',
+  },
+];
+
+// Friendly labels for the provider IDs returned by /api/settings/llm-status.
+const PROVIDER_PRETTY = {
+  openai:     'OpenAI (GPT-4o)',
+  anthropic:  'Anthropic (Claude)',
+  gemini:     'Google Gemini',
+  groq:       'Groq (Llama 3.3)',
+  openrouter: 'OpenRouter',
+};
+
+function AiKeysTab({ settings, onSave }) {
+  const llmKeys = settings?.llm_keys || {};
+  // form state — empty string means "no change". Per-provider buffer only.
+  const [form, setForm] = useState({});
+  const [saved, setSaved] = useState(false);
+
+  // Live status — which provider would be called for this shop right now,
+  // and was that key from the shop-level override or the platform default.
+  // Re-fetches when settings change (e.g. after a save).
+  const { data: llmStatus } = useQuery(
+    ['settings-llm-status', JSON.stringify(llmKeys)],
+    () => settingsApi.llmStatus(),
+  );
+  const active = llmStatus?.active;
+  const tryOrder = llmStatus?.try_order || [];
+
+  const save = useMutation(() => {
+    // Send only fields the user actually edited (non-undefined).
+    const llm_keys = {};
+    for (const k of Object.keys(form)) {
+      if (form[k] !== undefined) llm_keys[k] = form[k];
+    }
+    return onSave({ llm_keys });
+  }, {
+    onSuccess: () => {
+      setForm({});
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    },
+  });
+
+  const setField = (id) => (val) => setForm(f => ({ ...f, [id]: val }));
+  const clearField = (id) => () => setForm(f => ({ ...f, [id]: '' }));
+
+  return (
+    <BlockStack gap="500">
+      <Banner tone="info" title="Optional — bring your own AI keys">
+        <p>
+          By default, the app uses the platform's shared free-tier AI keys (Gemini, Groq, OpenRouter).
+          Add your own keys here to take control of quotas, billing, and provider preference.
+          Any key you add takes priority over the platform's key for AI features run on this store.
+          Leave a field blank to keep using the platform default.
+        </p>
+      </Banner>
+
+      {/* Live "active provider" indicator — shows which provider AI features
+          will actually call for this shop, and whether it's coming from a
+          shop-level override or a platform default. */}
+      {active ? (
+        <Banner tone={active.source === 'shop' ? 'success' : 'info'}>
+          <BlockStack gap="100">
+            <Text variant="bodyMd" as="p">
+              <strong>Active provider:</strong>{' '}
+              {PROVIDER_PRETTY[active.id] || active.id}
+              {' — '}
+              {active.source === 'shop'
+                ? <Badge tone="success">Your key</Badge>
+                : <Badge>Platform default</Badge>}
+            </Text>
+            {tryOrder.length > 1 && (
+              <Text variant="bodySm" as="p" tone="subdued">
+                Fallback order: {tryOrder.map(p => `${PROVIDER_PRETTY[p.id] || p.id} (${p.source})`).join(' → ')}
+              </Text>
+            )}
+          </BlockStack>
+        </Banner>
+      ) : (
+        <Banner tone="warning">
+          <Text as="p">
+            No AI provider is currently configured for this shop. Add a key below or ask your platform admin to enable a default.
+          </Text>
+        </Banner>
+      )}
+
+      {saved && <Banner tone="success" title="AI keys saved" />}
+
+      {LLM_PROVIDERS.map(p => {
+        const configured = !!llmKeys[p.id];
+        const value = form[p.id] !== undefined ? form[p.id] : '';
+        return (
+          <Card key={p.id}>
+            <BlockStack gap="300">
+              <InlineStack align="space-between" blockAlign="center">
+                <BlockStack gap="050">
+                  <InlineStack gap="200" blockAlign="center">
+                    <Text variant="headingMd" as="h2">{p.label}</Text>
+                    {configured ? <Badge tone="success">Configured</Badge> : <Badge>Using platform default</Badge>}
+                  </InlineStack>
+                  <Text variant="bodySm" tone="subdued" as="p">{p.help}</Text>
+                </BlockStack>
+                <Link url={p.signupUrl} external>Get a key →</Link>
+              </InlineStack>
+              <TextField
+                label="API key"
+                labelHidden
+                type="password"
+                value={value}
+                onChange={setField(p.id)}
+                placeholder={configured ? '•••••••• (leave blank to keep current)' : p.placeholder}
+                autoComplete="off"
+              />
+              {configured && (
+                <InlineStack>
+                  <Button
+                    variant="plain"
+                    tone="critical"
+                    onClick={clearField(p.id)}
+                  >
+                    Clear stored key (revert to platform default)
+                  </Button>
+                </InlineStack>
+              )}
+            </BlockStack>
+          </Card>
+        );
+      })}
+
+      <InlineStack>
+        <Button
+          variant="primary"
+          onClick={() => save.mutate()}
+          loading={save.isLoading}
+          disabled={Object.keys(form).length === 0}
+        >
+          Save changes
+        </Button>
+      </InlineStack>
+
+      {save.error && (
+        <Banner tone="critical" onDismiss={() => save.reset()}>
+          <p>{save.error?.error || save.error?.message || 'Save failed'}</p>
+        </Banner>
+      )}
+    </BlockStack>
+  );
+}
+
 // ── Main page ───────────────────────────────────────────────────────────────
 export default function ShopSettings() {
   const queryClient = useQueryClient();
@@ -415,6 +597,7 @@ export default function ShopSettings() {
               {TABS[tabIndex].id === 'general'       && <GeneralTab        settings={settings} onSave={onSave} />}
               {TABS[tabIndex].id === 'notifications' && <NotificationsTab  settings={settings} onSave={onSave} />}
               {TABS[tabIndex].id === 'google'        && <GoogleApiTab      settings={settings} googleStatus={googleStatus} onSave={onSave} onClear={onClear} />}
+              {TABS[tabIndex].id === 'ai-keys'       && <AiKeysTab         settings={settings} onSave={onSave} />}
             </Box>
           </Tabs>
         </Layout.Section>

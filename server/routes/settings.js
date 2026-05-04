@@ -3,15 +3,19 @@ const router = express.Router();
 const { ShopSettings } = require('../models');
 const { encrypt, decrypt } = require('../services/encryption');
 const { shopifyAuth } = require('../middleware/shopifyAuth');
+const { configuredProviders } = require('../services/llm');
 
 // Default opt-in for every event the merchant CAN opt out of. The "admin-only"
 // events (welcome / googleConnected / subscription) are not toggleable here —
 // they're system events controlled by the super admin.
 const DEFAULT_EMAIL_PREFS = {
-  audit:        true,
-  aiVisibility: true,
-  stockAlerts:  true,
-  weeklyReport: true,
+  audit:         true,
+  aiVisibility:  true,
+  stockAlerts:   true,
+  weeklyReport:  true,
+  // Opt-in only — defaults to false so we don't send daily emails to every
+  // newly-installed merchant unless they explicitly turn it on in Settings.
+  dailyBriefing: false,
 };
 
 const VALID_WEEKLY_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -28,6 +32,7 @@ router.get('/', shopifyAuth, async (req, res) => {
         email_prefs: DEFAULT_EMAIL_PREFS,
         weekly_report_day: 1,
         default_date_range: '28d',
+        llm_keys: { openai: false, anthropic: false, gemini: false, groq: false, openrouter: false },
       });
     }
     // Strip any legacy admin-only event keys from prefs so the UI never shows them
@@ -53,6 +58,14 @@ router.get('/', shopifyAuth, async (req, res) => {
       email_prefs: cleanPrefs,
       weekly_report_day: settings.weekly_report_day != null ? settings.weekly_report_day : 1,
       default_date_range: settings.default_date_range || '28d',
+      // LLM key presence flags (we never return the actual key — only whether one is set)
+      llm_keys: {
+        openai:     !!settings.openai_key_enc,
+        anthropic:  !!settings.anthropic_key_enc,
+        gemini:     !!settings.gemini_key_enc,
+        groq:       !!settings.groq_key_enc,
+        openrouter: !!settings.openrouter_key_enc,
+      },
     });
   } catch (err) {
     console.error('Settings GET error:', err);
@@ -67,6 +80,8 @@ router.put('/', shopifyAuth, async (req, res) => {
       setup_step, setup_completed,
       auto_sitemap_enabled, auto_sitemap_url, brand_keywords, ai_brand_name,
       notification_email, email_prefs, weekly_report_day, default_date_range,
+      // Per-shop LLM API key overrides — pass an empty string to clear
+      llm_keys, // { openai?, anthropic?, gemini?, groq?, openrouter? }
     } = req.body;
 
     const data = {};
@@ -98,6 +113,28 @@ router.put('/', shopifyAuth, async (req, res) => {
     }
     if (default_date_range !== undefined) data.default_date_range = default_date_range || '28d';
 
+    // LLM key overrides — only the keys explicitly present in the body are
+    // touched. Empty string clears the override (re-enables platform fallback);
+    // a non-empty value is encrypted before storage.
+    if (llm_keys && typeof llm_keys === 'object') {
+      const fieldByProvider = {
+        openai:     'openai_key_enc',
+        anthropic:  'anthropic_key_enc',
+        gemini:     'gemini_key_enc',
+        groq:       'groq_key_enc',
+        openrouter: 'openrouter_key_enc',
+      };
+      for (const [provider, raw] of Object.entries(llm_keys)) {
+        const field = fieldByProvider[provider];
+        if (!field) continue;
+        if (raw === '' || raw === null) {
+          data[field] = null;
+        } else if (typeof raw === 'string' && raw.trim()) {
+          data[field] = encrypt(raw.trim());
+        }
+      }
+    }
+
     const existing = await ShopSettings.findOne({ where: { shop_id: req.shop.id } });
     if (existing) {
       await existing.update(data);
@@ -121,6 +158,24 @@ router.delete('/credentials', shopifyAuth, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to clear credentials' });
+  }
+});
+
+// Returns the resolved LLM provider try-order for THIS shop, with the source
+// of each key (shop-level override or platform default). Used by the AI Keys
+// tab so the merchant can see which provider will actually be called.
+router.get('/llm-status', shopifyAuth, async (req, res) => {
+  try {
+    const providers = await configuredProviders(req.shop.id);
+    res.json({
+      active: providers[0]
+        ? { id: providers[0].id, source: providers[0].source }
+        : null,
+      try_order: providers.map(p => ({ id: p.id, source: p.source })),
+    });
+  } catch (err) {
+    console.error('GET /settings/llm-status:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to resolve LLM status' });
   }
 });
 

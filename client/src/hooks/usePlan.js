@@ -22,6 +22,25 @@ const FEATURE_STRINGS = {
   autoSitemap:      'auto sitemap',
   brandSplit:       'brand vs non-brand',
   prioritySupport:  'priority support',
+  // AI Advanced — match against the labels stored on the plan's features array.
+  aiAuditFix:         'ai audit fix-it',
+  aiAuditPlan:        'ai priority action plan',
+  aiAuditTrend:       'ai score trend',
+  aiAuditAutoFix:     'one-click auto-fix',
+  aiWhyNotMentioned:  'why-not-mentioned',
+  aiPromptSuggest:    'ai prompt auto-suggestions',
+  aiCompetitor:       'competitor ai tracking',
+  aiQuickWins:        'ai quick-win',
+  aiCannibalization:  'ai cannibalization',
+  aiMetaRewrite:      'ai meta tag rewriter',
+  aiWeeklyDigest:     'ai weekly digest',
+  aiAnomalies:        'ai anomaly',
+  aiAdsWaste:         'ai ads wasted-spend',
+  aiRestockReasoning: 'ai restock',
+  aiBulkContent:      'bulk ai content',
+  aiBrandVoice:       'brand-voice consistency',
+  aiChat:             'ai chat assistant',
+  aiDailyBriefing:    'daily ai briefing',
 };
 
 // Fallback hardcoded flags for when subscription hasn't loaded or plan has no features array
@@ -34,6 +53,13 @@ const PLAN_FALLBACK = {
     siteAudit: false, aiVisibility: false, contentCreation: false,
     productFaqs: false, structuredMarkup: false,
     prioritySupport: false,
+    // AI Advanced — none on Starter
+    aiAuditFix: false, aiAuditPlan: false, aiAuditTrend: false, aiAuditAutoFix: false,
+    aiWhyNotMentioned: false, aiPromptSuggest: false, aiCompetitor: false,
+    aiQuickWins: false, aiCannibalization: false, aiMetaRewrite: false,
+    aiWeeklyDigest: false, aiAnomalies: false, aiAdsWaste: false,
+    aiRestockReasoning: false, aiBulkContent: false, aiBrandVoice: false,
+    aiChat: false, aiDailyBriefing: false,
   },
   growth: {
     ga4: true, searchConsole: true, googleAds: true, sitemapManager: true,
@@ -43,6 +69,13 @@ const PLAN_FALLBACK = {
     siteAudit: true, aiVisibility: false, contentCreation: true,
     productFaqs: true, structuredMarkup: false,
     prioritySupport: false,
+    // AI Advanced — most basic AI features on Growth, premium ones on Pro only
+    aiAuditFix: true, aiAuditPlan: true, aiAuditTrend: true, aiAuditAutoFix: false,
+    aiWhyNotMentioned: false, aiPromptSuggest: false, aiCompetitor: false,
+    aiQuickWins: true, aiCannibalization: false, aiMetaRewrite: true,
+    aiWeeklyDigest: true, aiAnomalies: false, aiAdsWaste: false,
+    aiRestockReasoning: true, aiBulkContent: false, aiBrandVoice: false,
+    aiChat: false, aiDailyBriefing: false,
   },
   pro: {
     ga4: true, searchConsole: true, googleAds: true, sitemapManager: true,
@@ -52,6 +85,13 @@ const PLAN_FALLBACK = {
     siteAudit: true, aiVisibility: true, contentCreation: true,
     productFaqs: true, structuredMarkup: true,
     prioritySupport: true,
+    // AI Advanced — everything on Pro
+    aiAuditFix: true, aiAuditPlan: true, aiAuditTrend: true, aiAuditAutoFix: true,
+    aiWhyNotMentioned: true, aiPromptSuggest: true, aiCompetitor: true,
+    aiQuickWins: true, aiCannibalization: true, aiMetaRewrite: true,
+    aiWeeklyDigest: true, aiAnomalies: true, aiAdsWaste: true,
+    aiRestockReasoning: true, aiBulkContent: true, aiBrandVoice: true,
+    aiChat: true, aiDailyBriefing: true,
   },
 };
 
@@ -82,7 +122,7 @@ function parseFeaturesFromArray(arr = []) {
 }
 
 export function usePlan() {
-  const { subscription } = useShop();
+  const { subscription, loading } = useShop();
   const slug = subscription?.plan?.slug || 'starter';
 
   let featuresArr = [];
@@ -99,6 +139,9 @@ export function usePlan() {
   const can = (feature) => !!features[feature];
 
   return {
+    // True until ShopContext's initial /api/billing/subscription call resolves.
+    // Gate UI on this so we don't flash the "starter" defaults to Pro users.
+    loading,
     slug,
     planName: PLAN_DISPLAY[slug] || slug,
     plan: subscription?.plan,

@@ -2,13 +2,14 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   Page, Card, Text, Banner, BlockStack, InlineStack, Box, Spinner, Badge,
-  Button, ButtonGroup, Select, Tabs, EmptyState, Layout, InlineGrid,
+  Button, ButtonGroup, Select, Tabs, EmptyState, Layout, InlineGrid, TextField,
 } from '@shopify/polaris';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { aiVisibilityApi } from '../api';
 import PlanGate from '../components/PlanGate';
+import { usePlan, downloadCSV } from '../hooks/usePlan';
 
 const TABS = [
   { id: 'overview', content: 'Visibility Overview', accessibilityLabel: 'Visibility Overview', panelID: 'overview-panel' },
@@ -68,21 +69,49 @@ function VisibilityGauge({ score = 0 }) {
 
 // ── Prompts tab ──────────────────────────────────────────────────────────────
 function PromptsTab() {
+  const { can } = usePlan();
+  const canSuggest = can('aiPromptSuggest');
   const { data: defaults, isLoading } = useQuery('aiv-prompts', aiVisibilityApi.defaultPrompts);
+  const [extraPrompts, setExtraPrompts] = useState([]);
+  const [suggestState, setSuggestState] = useState(null); // null | { loading } | { error }
+
+  const handleSuggest = async () => {
+    setSuggestState({ loading: true });
+    try {
+      const res = await aiVisibilityApi.suggestPrompts();
+      setExtraPrompts(prev => [...prev, ...(res.prompts || [])]);
+      setSuggestState(null);
+    } catch (err) {
+      setSuggestState({ error: err?.error || err?.message || 'Failed to suggest prompts' });
+    }
+  };
+
   if (isLoading) return <Box padding="800"><InlineStack align="center"><Spinner /></InlineStack></Box>;
-  const prompts = defaults?.prompts || [];
+  const prompts = [...(defaults?.prompts || []), ...extraPrompts];
 
   return (
     <Card padding="0">
       <Box padding="400" borderBlockEndWidth="025" borderColor="border">
-        <BlockStack gap="100">
-          <Text variant="headingMd" as="h2">Auto-generated prompts ({prompts.length})</Text>
-          <Text variant="bodySm" as="p" tone="subdued">
-            Built from your active products. Each is sent to every configured provider —
-            we count how often <Text as="span" fontWeight="semibold">{defaults?.brand_name}</Text> appears
-            in the response.
-          </Text>
-        </BlockStack>
+        <InlineStack align="space-between" blockAlign="center">
+          <BlockStack gap="100">
+            <Text variant="headingMd" as="h2">Auto-generated prompts ({prompts.length})</Text>
+            <Text variant="bodySm" as="p" tone="subdued">
+              Built from your active products. Each is sent to every configured provider —
+              we count how often <Text as="span" fontWeight="semibold">{defaults?.brand_name}</Text> appears
+              in the response.
+            </Text>
+          </BlockStack>
+          {canSuggest ? (
+            <Button onClick={handleSuggest} loading={suggestState?.loading} variant="primary">
+              ✨ Suggest more
+            </Button>
+          ) : (
+            <PlanGate feature="aiPromptSuggest" required="pro" compact>Suggest more</PlanGate>
+          )}
+        </InlineStack>
+        {suggestState?.error && (
+          <Box paddingBlockStart="200"><Banner tone="critical"><p>{suggestState.error}</p></Banner></Box>
+        )}
       </Box>
       {prompts.map((p, i) => (
         <Box key={i} padding="400" borderBlockEndWidth={i === prompts.length - 1 ? '0' : '025'} borderColor="border">
@@ -107,6 +136,64 @@ function PromptsTab() {
 }
 
 // ── Results tab ──────────────────────────────────────────────────────────────
+function WhyNotMentionedPanel({ resultId }) {
+  const { can } = usePlan();
+  const [state, setState] = useState(null); // null | {loading} | {error} | {data}
+  if (!can('aiWhyNotMentioned')) return null;
+  const fetchIt = async () => {
+    setState({ loading: true });
+    try {
+      const data = await aiVisibilityApi.whyNotMentioned(resultId);
+      setState({ data });
+    } catch (err) {
+      setState({ error: err?.error || err?.message || 'Failed' });
+    }
+  };
+
+  if (!state) {
+    return (
+      <Box background="bg-surface-secondary" padding="200" borderRadius="200">
+        <InlineStack align="space-between" blockAlign="center">
+          <Text variant="bodySm" tone="subdued">Want to know why this AI didn't mention you?</Text>
+          <Button size="micro" onClick={fetchIt}>✨ Why not?</Button>
+        </InlineStack>
+      </Box>
+    );
+  }
+  if (state.loading) {
+    return (
+      <Box background="bg-surface-secondary" padding="200" borderRadius="200">
+        <InlineStack gap="200" blockAlign="center"><Spinner size="small" /><Text variant="bodySm" tone="subdued">Analyzing…</Text></InlineStack>
+      </Box>
+    );
+  }
+  if (state.error) {
+    return <Banner tone="critical"><Text as="p">{state.error}</Text></Banner>;
+  }
+  const d = state.data;
+  return (
+    <Box padding="300" borderRadius="200" borderWidth="025" borderColor="border" background="bg-surface">
+      <BlockStack gap="200">
+        <Text variant="bodySm" fontWeight="semibold">✨ Why this AI didn't mention you</Text>
+        {d.why_not && <Text variant="bodySm" as="p">{d.why_not}</Text>}
+        {Array.isArray(d.suggestions) && d.suggestions.length > 0 && (
+          <BlockStack gap="100">
+            <Text variant="bodySm" fontWeight="semibold">What to do</Text>
+            {d.suggestions.map((s, i) => (
+              <Text key={i} variant="bodySm" as="p">• {s}</Text>
+            ))}
+          </BlockStack>
+        )}
+        {d.content_to_create && (
+          <Text variant="bodySm" as="p" tone="subdued">
+            <strong>Content to create:</strong> {d.content_to_create}
+          </Text>
+        )}
+      </BlockStack>
+    </Box>
+  );
+}
+
 function ResultsTab({ runId, providers }) {
   const { data: results = [], isLoading } = useQuery(
     ['aiv-results', runId],
@@ -133,8 +220,37 @@ function ResultsTab({ runId, providers }) {
   const providerMap = {};
   for (const p of (providers || [])) providerMap[p.id] = p;
 
+  const exportCsv = () => {
+    const rows = results.map(r => ({
+      provider: r.provider,
+      topic: r.topic || '',
+      intent: r.intent || '',
+      prompt: r.prompt,
+      brand_mentioned: r.brand_mentioned ? 'yes' : 'no',
+      mention_count: r.brand_mention_count || 0,
+      brand_cited: r.brand_cited ? 'yes' : 'no',
+      citations: r.citation_count || 0,
+      response: (r.response_text || '').replace(/\s+/g, ' ').slice(0, 500),
+      error: r.error || '',
+    }));
+    downloadCSV(rows, `ai-visibility-run-${runId}.csv`);
+  };
+
   return (
     <BlockStack gap="400">
+      <Card>
+        <Box padding="300">
+          <InlineStack align="space-between" blockAlign="center">
+            <Text variant="bodySm" as="span" tone="subdued">
+              {results.length} total · {successful.length} successful · {failed.length} failed
+            </Text>
+            <InlineStack gap="200">
+              <Button onClick={exportCsv} disabled={!results.length}>Download CSV</Button>
+              <Button onClick={() => window.open(`/api/print/ai-visibility/${runId}` + window.location.search, '_blank')} disabled={!results.length}>Download Report</Button>
+            </InlineStack>
+          </InlineStack>
+        </Box>
+      </Card>
       {failed.length > 0 && successful.length > 0 && (
         <Card>
           <InlineStack align="space-between" blockAlign="center">
@@ -164,6 +280,7 @@ function ResultsTab({ runId, providers }) {
               </InlineStack>
               <Text variant="bodyMd" as="p" fontWeight="semibold">{r.prompt}</Text>
               {r.error && <Banner tone="critical"><Text as="p">{r.error}</Text></Banner>}
+              {!r.brand_mentioned && !r.error && <WhyNotMentionedPanel resultId={r.id} />}
               {r.response_text && (
                 <Box background="bg-surface-secondary" padding="400" borderRadius="200" borderWidth="025" borderColor="border">
                   <Text variant="bodySm" as="p" breakWord>
@@ -196,6 +313,86 @@ function ResultsTab({ runId, providers }) {
         </Card>
       )}
     </BlockStack>
+  );
+}
+
+// Side-by-side competitor visibility check. Sends the same prompts to AI
+// providers and counts mentions of a competitor name versus the merchant.
+function CompetitorCheckCard() {
+  const { can } = usePlan();
+  const [name, setName] = useState('');
+  const [state, setState] = useState(null); // null | { loading } | { error } | { data }
+  if (!can('aiCompetitor')) {
+    return (
+      <PlanGate feature="aiCompetitor" required="pro">
+        <Card><Box padding="400"><Text variant="headingMd">Compare against a competitor</Text></Box></Card>
+      </PlanGate>
+    );
+  }
+
+  const run = async () => {
+    if (!name.trim()) return;
+    setState({ loading: true });
+    try {
+      const data = await aiVisibilityApi.competitorCheck(name.trim());
+      setState({ data });
+    } catch (err) {
+      setState({ error: err?.error || err?.message || 'Failed' });
+    }
+  };
+
+  return (
+    <Card>
+      <Box padding="400">
+        <BlockStack gap="300">
+          <BlockStack gap="100">
+            <Text variant="headingMd" as="h3">Compare against a competitor</Text>
+            <Text variant="bodySm" tone="subdued">
+              Run the same prompts and see how often a competitor is mentioned versus you.
+            </Text>
+          </BlockStack>
+          <InlineStack gap="200" blockAlign="end">
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <TextField
+                label="Competitor name"
+                labelHidden
+                value={name}
+                onChange={setName}
+                placeholder="e.g. Acme Co"
+                autoComplete="off"
+                onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+              />
+            </div>
+            <Button variant="primary" onClick={run} loading={state?.loading} disabled={!name.trim()}>
+              Compare
+            </Button>
+          </InlineStack>
+          {state?.error && <Banner tone="critical"><p>{state.error}</p></Banner>}
+          {state?.data && (
+            <Box padding="300" borderRadius="200" borderWidth="025" borderColor="border">
+              <BlockStack gap="200">
+                <InlineStack gap="400" blockAlign="center">
+                  <BlockStack gap="050" inlineAlign="center">
+                    <Text variant="bodySm" tone="subdued">{state.data.brand_name}</Text>
+                    <Text variant="heading2xl">{state.data.brand_mentions}</Text>
+                    <Text variant="bodySm" tone="subdued">mentions</Text>
+                  </BlockStack>
+                  <Text variant="headingLg" tone="subdued">vs</Text>
+                  <BlockStack gap="050" inlineAlign="center">
+                    <Text variant="bodySm" tone="subdued">{state.data.competitor_name}</Text>
+                    <Text variant="heading2xl">{state.data.competitor_mentions}</Text>
+                    <Text variant="bodySm" tone="subdued">mentions</Text>
+                  </BlockStack>
+                </InlineStack>
+                <Text variant="bodySm" tone="subdued">
+                  Across {state.data.sampled_prompts} prompts from your latest run.
+                </Text>
+              </BlockStack>
+            </Box>
+          )}
+        </BlockStack>
+      </Box>
+    </Card>
   );
 }
 
@@ -236,6 +433,24 @@ function OverviewTab({ run, results, onRun, runLoading, providers, configuredCou
   }
 
   const inProgress = ['queued', 'running'].includes(run.status);
+
+  // Live aggregates computed from the partial results that have come in so far.
+  // While the run is in progress, the persisted run.visibility_score / run.mentions_total
+  // fields are still 0 (they're only computed at run completion), so we derive
+  // them ourselves from the results we have so far. After completion these match
+  // the persisted values.
+  const liveMentioned   = results.filter(r => r.brand_mentioned).length;
+  const liveBrandCited  = results.filter(r => r.brand_cited).length;
+  const liveCompleted   = results.length;
+  const liveScore = liveCompleted
+    ? Math.round(((liveMentioned / liveCompleted) * 70 + (liveBrandCited / liveCompleted) * 30) * 100)
+    : 0;
+  const displayedScore = inProgress
+    ? liveScore
+    : (run.visibility_score ?? liveScore);
+  const progressPct = run.prompts_total
+    ? Math.min(100, Math.round((run.prompts_completed / run.prompts_total) * 100))
+    : 0;
 
   // Per-provider error classification
   const QUOTA_RE = /quota|billing|insufficient|payment_required|credit balance|out of credit|rate.?limit/i;
@@ -308,12 +523,57 @@ function OverviewTab({ run, results, onRun, runLoading, providers, configuredCou
 
   return (
     <BlockStack gap="400">
+      <CompetitorCheckCard />
+
       {inProgress && (
-        <Banner tone="info" title={`Run in progress: ${run.status}`}>
-          <Text as="p">
-            Completed {run.prompts_completed} of {run.prompts_total} prompt × provider runs. Page auto-refreshes.
-          </Text>
-        </Banner>
+        <Card>
+          <BlockStack gap="300">
+            <InlineStack align="space-between" blockAlign="center">
+              <BlockStack gap="100">
+                <InlineStack gap="200" blockAlign="center">
+                  <Spinner size="small" />
+                  <Text variant="headingMd" as="h2">Run in progress</Text>
+                </InlineStack>
+                <Text variant="bodySm" tone="subdued" as="p">
+                  Completed {run.prompts_completed} of {run.prompts_total} prompt × provider calls.
+                  Live counts and partial score update as results arrive.
+                </Text>
+              </BlockStack>
+              <Text variant="headingLg" fontWeight="bold">{progressPct}%</Text>
+            </InlineStack>
+            {/* Progress bar */}
+            <Box>
+              <div style={{
+                height: 8,
+                background: 'var(--p-color-bg-fill-tertiary)',
+                borderRadius: 4,
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  width: `${progressPct}%`,
+                  height: '100%',
+                  background: 'var(--p-color-bg-fill-info)',
+                  transition: 'width 0.3s ease-in-out',
+                }} />
+              </div>
+            </Box>
+            {/* Live mini-stats */}
+            <InlineStack gap="500">
+              <BlockStack gap="050">
+                <Text variant="bodySm" tone="subdued">Mentions so far</Text>
+                <Text variant="headingMd" fontWeight="bold">{liveMentioned}</Text>
+              </BlockStack>
+              <BlockStack gap="050">
+                <Text variant="bodySm" tone="subdued">Brand-cited so far</Text>
+                <Text variant="headingMd" fontWeight="bold">{liveBrandCited}</Text>
+              </BlockStack>
+              <BlockStack gap="050">
+                <Text variant="bodySm" tone="subdued">Live score</Text>
+                <Text variant="headingMd" fontWeight="bold">{liveScore}/100</Text>
+              </BlockStack>
+            </InlineStack>
+          </BlockStack>
+        </Card>
       )}
       {run.status === 'failed' && (
         <Banner tone="critical" title="Run failed">
@@ -321,21 +581,20 @@ function OverviewTab({ run, results, onRun, runLoading, providers, configuredCou
         </Banner>
       )}
 
+      {/* Per-provider status notes — kept quiet. We only surface a critical
+          banner when EVERY provider failed (so the merchant has zero data
+          to look at). Otherwise it's just a small subdued line. */}
       {erroredProviderIds.length > 0 && anyWorking && (
         <Card padding="300">
           <BlockStack gap="100">
             {erroredProviderIds.map(pid => {
               const p = (providers || []).find(x => x.id === pid);
               const name = p?.name || pid;
-              const { kind } = errorByProvider[pid];
-              const reason = kind === 'auth'  ? 'API key invalid'
-                           : kind === 'quota' ? 'free-tier limit reached'
-                           : 'request failed';
               return (
                 <InlineStack key={pid} gap="200" blockAlign="center" wrap>
-                  <Badge tone="warning">{name}</Badge>
+                  <Badge>{name}</Badge>
                   <Text variant="bodySm" as="span" tone="subdued">
-                    not included — {reason}
+                    skipped this run — using the other {workingProviderIds.length} provider{workingProviderIds.length === 1 ? '' : 's'} instead
                   </Text>
                 </InlineStack>
               );
@@ -344,24 +603,13 @@ function OverviewTab({ run, results, onRun, runLoading, providers, configuredCou
         </Card>
       )}
 
-      {erroredProviderIds.length > 0 && !anyWorking && erroredProviderIds.map(pid => {
-        const p = (providers || []).find(x => x.id === pid);
-        const name = p?.name || pid;
-        const { kind, message } = errorByProvider[pid];
-        return (
-          <Banner key={pid} tone="critical" title={
-            kind === 'auth'  ? `${name} key was rejected` :
-            kind === 'quota' ? `${name} free-tier limit reached` :
-            `${name} request failed`
-          }>
-            <Text as="p">
-              {kind === 'auth'  && <>Your {p?.label || name} key is invalid or expired. Update it in the server <code>.env</code>.</>}
-              {kind === 'quota' && <>You've hit {p?.label || name}'s free-tier rate limit. Wait an hour or add another provider.</>}
-              {kind === 'other' && <em>"{message.slice(0, 200)}"</em>}
-            </Text>
-          </Banner>
-        );
-      })}
+      {erroredProviderIds.length > 0 && !anyWorking && (
+        <Banner tone="warning" title="No AI provider responded for this run">
+          <Text as="p">
+            Every configured provider returned an error. Check your provider keys in admin Settings → AI providers, or wait a few minutes and retry.
+          </Text>
+        </Banner>
+      )}
 
       {/* Filter bar */}
       <Card>
@@ -390,16 +638,21 @@ function OverviewTab({ run, results, onRun, runLoading, providers, configuredCou
       <InlineGrid columns={{ xs: 1, md: ['oneThird', 'twoThirds'] }} gap="400">
         <Card>
           <BlockStack gap="200">
-            <Text variant="headingMd" as="h2">AI Visibility</Text>
+            <InlineStack align="space-between" blockAlign="center">
+              <Text variant="headingMd" as="h2">AI Visibility</Text>
+              {inProgress && <Badge tone="info">Calculating</Badge>}
+            </InlineStack>
             <Box paddingBlockStart="300">
-              <VisibilityGauge score={run.visibility_score || 0} />
+              <VisibilityGauge score={displayedScore} />
             </Box>
             <Banner tone="info">
               <Text as="p">
-                {run.visibility_score >= 70 ? 'Strong presence — your brand is regularly recommended by AI.' :
-                 run.visibility_score >= 40 ? 'Occasionally mentioned in LLM outputs, but visibility can improve.' :
-                 run.visibility_score >= 20 ? 'Rare mentions — significant SEO + brand work needed.' :
-                 'Almost invisible to AI assistants today.'}
+                {inProgress
+                  ? `Live score from ${liveCompleted} completed call${liveCompleted === 1 ? '' : 's'}. Will firm up as remaining prompts return.`
+                  : displayedScore >= 70 ? 'Strong presence — your brand is regularly recommended by AI.'
+                  : displayedScore >= 40 ? 'Occasionally mentioned in LLM outputs, but visibility can improve.'
+                  : displayedScore >= 20 ? 'Rare mentions — significant SEO + brand work needed.'
+                  : 'Almost invisible to AI assistants today.'}
               </Text>
             </Banner>
           </BlockStack>
@@ -552,15 +805,28 @@ function AIVisibilityInner() {
   const { data: latest, isLoading: ll } = useQuery('aiv-latest', aiVisibilityApi.latest, {
     refetchInterval: (data) => (data && ['queued', 'running'].includes(data.status)) ? 4000 : false,
   });
+  // Poll results too while the run is in progress so the page shows partial
+  // mention / citation counts as each prompt × provider call lands.
+  const latestInFlight = latest && ['queued', 'running'].includes(latest.status);
   const { data: results = [] } = useQuery(
     ['aiv-results', latest?.id],
     () => aiVisibilityApi.results(latest.id),
-    { enabled: !!latest?.id },
+    {
+      enabled: !!latest?.id,
+      refetchInterval: latestInFlight ? 4000 : false,
+    },
   );
   const { data: history = [] } = useQuery('aiv-history', aiVisibilityApi.history);
 
   const runMutation = useMutation(aiVisibilityApi.run, {
     onSuccess: () => qc.invalidateQueries('aiv-latest'),
+  });
+
+  const cancelMutation = useMutation(aiVisibilityApi.cancel, {
+    onSuccess: () => {
+      qc.invalidateQueries('aiv-latest');
+      qc.invalidateQueries('aiv-history');
+    },
   });
 
   if (ls || ll) {
@@ -592,11 +858,17 @@ function AIVisibilityInner() {
       }
     : undefined;
 
+  // Show a Cancel button alongside the primary action when a run is stuck.
+  const secondaryActions = inFlight
+    ? [{ content: 'Cancel run', onAction: () => cancelMutation.mutate(), loading: cancelMutation.isLoading, destructive: true }]
+    : undefined;
+
   return (
     <Page
       title={`AI Visibility${settings?.brand_name ? ` · ${settings.brand_name}` : ''}`}
       subtitle={subtitleParts.join(' · ')}
       primaryAction={primaryAction}
+      secondaryActions={secondaryActions}
     >
       <Layout>
         <Layout.Section>

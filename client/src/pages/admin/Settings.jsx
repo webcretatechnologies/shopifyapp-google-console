@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   Page, Layout, Card, Text, BlockStack, Box, Divider, Banner, Badge,
-  InlineStack, Tabs, TextField, Button, FormLayout, Spinner,
+  InlineStack, Tabs, TextField, Button, FormLayout, Spinner, Modal, List, Link as PolarisLink,
 } from '@shopify/polaris';
 import { adminApi } from '../../api';
 
@@ -48,6 +48,41 @@ const LANDO_COMMANDS = [
   ['lando logs -s client',  'Stream Vite client logs'],
 ];
 
+// ── How-to-get-this-key modal — shown when admin clicks "How to get key" ────
+function KeySetupModal({ field, onClose }) {
+  if (!field) return null;
+  return (
+    <Modal
+      open={!!field}
+      onClose={onClose}
+      title={`Get your ${field.label}`}
+      primaryAction={field.signupUrl
+        ? { content: 'Open provider site', external: true, url: field.signupUrl }
+        : { content: 'Done', onAction: onClose }}
+      secondaryActions={[{ content: 'Close', onAction: onClose }]}
+    >
+      <Modal.Section>
+        <BlockStack gap="300">
+          {field.help && <Text as="p" tone="subdued">{field.help}</Text>}
+          {Array.isArray(field.steps) && field.steps.length > 0 && (
+            <BlockStack gap="200">
+              <Text as="p" fontWeight="semibold">Steps:</Text>
+              <List type="number">
+                {field.steps.map((s, i) => <List.Item key={i}>{s}</List.Item>)}
+              </List>
+            </BlockStack>
+          )}
+          {field.signupUrl && (
+            <Text as="p" tone="subdued" variant="bodySm">
+              Provider site: <PolarisLink url={field.signupUrl} external>{field.signupUrl}</PolarisLink>
+            </Text>
+          )}
+        </BlockStack>
+      </Modal.Section>
+    </Modal>
+  );
+}
+
 // ── Live Setup tab — every editable runtime config ──────────────────────────
 function LiveSetupTab({ data, isLoading, onSave }) {
   // Local edit state mirrors the form — initialized from server values, then
@@ -55,6 +90,7 @@ function LiveSetupTab({ data, isLoading, onSave }) {
   const [draft, setDraft] = useState({});
   const [revealSecret, setRevealSecret] = useState({});
   const [savedAt, setSavedAt] = useState(null);
+  const [setupField, setSetupField] = useState(null);
 
   useEffect(() => {
     if (!data?.groups) return;
@@ -105,7 +141,12 @@ function LiveSetupTab({ data, isLoading, onSave }) {
       {Object.entries(data.groups).map(([groupId, group]) => (
         <Card key={groupId}>
           <BlockStack gap="400">
-            <Text variant="headingMd" as="h2">{group.label}</Text>
+            <BlockStack gap="100">
+              <Text variant="headingMd" as="h2">{group.label}</Text>
+              {group.description && (
+                <Text variant="bodySm" tone="subdued" as="p">{group.description}</Text>
+              )}
+            </BlockStack>
             <Divider />
             <FormLayout>
               {group.keys.map(k => (
@@ -119,6 +160,9 @@ function LiveSetupTab({ data, isLoading, onSave }) {
                       {k.source === 'db'  && <Badge tone="success" size="small">DB override</Badge>}
                       {k.source === 'env' && <Badge size="small">From .env</Badge>}
                       {k.source === 'unset' && <Badge tone="warning" size="small">Unset</Badge>}
+                      {(k.signupUrl || (Array.isArray(k.steps) && k.steps.length > 0)) && (
+                        <Button variant="plain" size="micro" onClick={() => setSetupField(k)}>How to get key</Button>
+                      )}
                     </InlineStack>
                   }
                   type={k.secret && !revealSecret[k.key] ? 'password' : 'text'}
@@ -138,6 +182,8 @@ function LiveSetupTab({ data, isLoading, onSave }) {
           </BlockStack>
         </Card>
       ))}
+
+      <KeySetupModal field={setupField} onClose={() => setSetupField(null)} />
 
       <InlineStack gap="200">
         <Button

@@ -70,8 +70,8 @@ router.post('/subscribe', shopifyAuth, async (req, res) => {
   try {
     const client = new shopify.clients.Graphql({ session });
     const mutation = `
-      mutation AppSubscriptionCreate($name: String!, $lineItems: [AppSubscriptionLineItemInput!]!, $returnUrl: URL!, $trialDays: Int) {
-        appSubscriptionCreate(name: $name, lineItems: $lineItems, returnUrl: $returnUrl, trialDays: $trialDays) {
+      mutation AppSubscriptionCreate($name: String!, $lineItems: [AppSubscriptionLineItemInput!]!, $returnUrl: URL!, $trialDays: Int, $test: Boolean) {
+        appSubscriptionCreate(name: $name, lineItems: $lineItems, returnUrl: $returnUrl, trialDays: $trialDays, test: $test) {
           userErrors { field message }
           confirmationUrl
           appSubscription { id status }
@@ -83,6 +83,8 @@ router.post('/subscribe', shopifyAuth, async (req, res) => {
       variables: {
         name: plan.name,
         trialDays: plan.trial_days,
+        // Use test charges outside production so dev stores don't get billed real money
+        test: process.env.NODE_ENV !== 'production',
         returnUrl: `${process.env.APP_URL}/api/billing/confirm?shop=${req.shop.shop_domain}&plan_id=${plan_id}`,
         lineItems: [{
           plan: {
@@ -114,7 +116,10 @@ router.post('/subscribe', shopifyAuth, async (req, res) => {
     res.json({ confirmationUrl });
   } catch (err) {
     console.error('Subscribe error:', err);
-    res.status(500).json({ error: 'Failed to create subscription' });
+    // Surface Shopify's real reason (e.g. "Apps without a public distribution
+    // cannot use the Billing API") so the merchant sees something actionable.
+    const message = err?.message || 'Failed to create subscription';
+    res.status(500).json({ error: message });
   }
 });
 

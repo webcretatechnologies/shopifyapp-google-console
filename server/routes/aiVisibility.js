@@ -3,6 +3,7 @@ const router = express.Router();
 const { shopifyAuth } = require('../middleware/shopifyAuth');
 const { ShopSettings, AIVisibilityRun, AIVisibilityResult } = require('../models');
 const { runVisibility, PROVIDERS, buildDefaultPrompts, getPlatformKeys } = require('../services/aiVisibility');
+const { requireFeature } = require('../services/planFeatures');
 
 // GET /api/ai-visibility/settings
 // Returns brand name + read-only provider list. Keys are platform-level (.env)
@@ -122,6 +123,188 @@ router.post('/run', shopifyAuth, async (req, res) => {
 
   setImmediate(() => runVisibility(run.id));
   res.json({ success: true, run });
+});
+
+// POST /api/ai-visibility/cancel — abort the latest in-flight run for this
+// shop. Doesn't actually kill the LLM calls (those will finish in the
+// background and write their results), it just flips the run row to 'failed'
+// so the UI unblocks. Useful when a run is hung on an upstream LLM provider.
+router.post('/cancel', shopifyAuth, async (req, res) => {
+  try {
+    const { Op } = require('sequelize');
+    const stuck = await AIVisibilityRun.findOne({
+      where: { shop_id: req.shop.id, status: { [Op.in]: ['queued', 'running'] } },
+      order: [['created_at', 'DESC']],
+    });
+    if (!stuck) return res.json({ success: true, cancelled: 0 });
+    await stuck.update({
+      status: 'failed',
+      error_message: 'Cancelled by user',
+      completed_at: new Date(),
+    });
+    res.json({ success: true, cancelled: 1, run_id: stuck.id });
+  } catch (err) {
+    console.error('POST /ai-visibility/cancel:', err.message);
+    res.status(500).json({ error: err.message || 'Cancel failed' });
+  }
+});
+
+// POST /api/ai-visibility/why-not-mentioned
+// Body: { result_id }
+// Returns AI-generated explanation of why the store wasn't mentioned + suggestions.
+router.post('/why-not-mentioned', shopifyAuth, requireFeature('aiWhyNotMentioned'), async (req, res) => {
+  try {
+    const { askLLMJson } = require('../services/llm');
+    const { Shop, ShopSettings } = require('../models');
+    const result = await AIVisibilityResult.findByPk(req.body?.result_id, {
+      include: [{ model: AIVisibilityRun, as: 'run' || undefined }],
+    });
+    if (!result) return res.status(404).json({ error: 'Result not found' });
+    // Authorize: result.run.shop_id must match
+    const run = await AIVisibilityRun.findByPk(result.run_id);
+    if (!run || run.shop_id !== req.shop.id) return res.status(404).json({ error: 'Result not found' });
+
+    const settings = await ShopSettings.findOne({ where: { shop_id: req.shop.id } });
+    const brandName = settings?.ai_brand_name || req.shop.shop_name || req.shop.shop_domain;
+
+    const userPrompt = `An AI assistant was asked the following question and did NOT meaningfully mention the store "${brandName}":
+
+Question: "${result.prompt}"
+AI provider: ${result.provider}
+AI's answer: "${(result.response_text || '').slice(0, 1500)}"
+
+Reply as JSON with these keys:
+- "why_not":            one or two sentences in plain English explaining the most likely reason the AI didn't mention this store (e.g. AI doesn't know the brand, brand has weak online presence in this category, AI cited only well-established names, etc.)
+- "suggestions":        an array of 3 short, concrete actions the merchant can take to start showing up for this question. Each suggestion must be 1 short sentence.
+- "content_to_create":  a short string describing the single most useful piece of content the merchant should publish to start ranking for this prompt. e.g. "A category page titled 'Best organic candles' with brand keywords in the H1 and body."`;
+
+    const out = await askLLMJson(userPrompt, {
+      system: 'You are an expert in AI search visibility and content strategy.',
+      maxTokens: 600,
+      temperature: 0.4,
+    });
+
+    res.json({
+      result_id: result.id,
+      provider: result.provider,
+      prompt: result.prompt,
+      ...out,
+    });
+  } catch (err) {
+    console.error('POST /ai-visibility/why-not-mentioned:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to analyze' });
+  }
+});
+
+// POST /api/ai-visibility/suggest-prompts
+// Returns AI-generated prompt suggestions based on the shop's catalog and brand.
+router.post('/suggest-prompts', shopifyAuth, requireFeature('aiPromptSuggest'), async (req, res) => {
+  try {
+    const { askLLMJson } = require('../services/llm');
+    const { Product, ShopSettings } = require('../models');
+    const settings = await ShopSettings.findOne({ where: { shop_id: req.shop.id } });
+    const brandName = settings?.ai_brand_name || req.shop.shop_name || req.shop.shop_domain;
+    const products = await Product.findAll({
+      where: { shop_id: req.shop.id, status: 'active' },
+      order: [['updated_at', 'DESC']],
+      limit: 30,
+    });
+    const types = [...new Set(products.map(p => p.product_type).filter(Boolean))].slice(0, 6);
+    const categories = types.length ? types.join(', ') : 'general products';
+
+    const userPrompt = `A Shopify store called "${brandName}" sells: ${categories}.
+Sample products: ${products.slice(0, 8).map(p => p.title).join(', ')}.
+
+Suggest 8 fresh prompts a real shopper might ask AI assistants (ChatGPT, Gemini, Perplexity) where the store SHOULD ideally be mentioned. Mix prompt intents:
+- Some commercial ("where to buy ...", "best ... online")
+- Some informational ("what is the best ... for ...?")
+- Some brand ("is ${brandName} a good place to shop?")
+- Some long-tail ("eco-friendly ... under $50")
+
+Reply as JSON with key "prompts" — an array of objects with keys:
+- "topic":  one short word category (e.g. "Brand", or a product type)
+- "intent": "navigational" | "commercial" | "informational"
+- "prompt": the question text (12–25 words, no quotes)`;
+
+    const out = await askLLMJson(userPrompt, {
+      system: 'You generate realistic shopper prompts for AI visibility tracking.',
+      maxTokens: 2000,
+      temperature: 0.7,
+    });
+    res.json({ prompts: Array.isArray(out.prompts) ? out.prompts : [] });
+  } catch (err) {
+    console.error('POST /ai-visibility/suggest-prompts:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to suggest prompts' });
+  }
+});
+
+// POST /api/ai-visibility/competitor-check
+// Body: { competitor_name, prompts? }
+// Runs the most-recent active prompt set against every configured AI provider
+// and counts mentions of the competitor — returned alongside the merchant's
+// own latest mention counts so the UI can render side-by-side scores.
+router.post('/competitor-check', shopifyAuth, requireFeature('aiCompetitor'), async (req, res) => {
+  try {
+    const { askLLM } = require('../services/llm');
+    const { ShopSettings } = require('../models');
+    const competitor = (req.body?.competitor_name || '').trim();
+    if (!competitor) return res.status(400).json({ error: 'competitor_name required' });
+
+    const latest = await AIVisibilityRun.findOne({
+      where: { shop_id: req.shop.id, status: 'completed' },
+      order: [['created_at', 'DESC']],
+    });
+    if (!latest) return res.status(400).json({ error: 'Run an AI Visibility analysis first.' });
+
+    const myResults = await AIVisibilityResult.findAll({ where: { run_id: latest.id } });
+    if (!myResults.length) return res.status(400).json({ error: 'No results in latest run.' });
+
+    const settings = await ShopSettings.findOne({ where: { shop_id: req.shop.id } });
+    const brandName = settings?.ai_brand_name || req.shop.shop_name || req.shop.shop_domain;
+
+    // Re-run the same prompts but only count mentions of the competitor.
+    // To keep this fast, sample up to 5 distinct prompts.
+    const seen = new Set();
+    const samples = myResults.filter(r => {
+      if (seen.has(r.prompt)) return false;
+      seen.add(r.prompt);
+      return true;
+    }).slice(0, 5);
+
+    const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const reCompetitor = new RegExp(`\\b${escapeRe(competitor)}\\b`, 'gi');
+
+    const perPrompt = [];
+    let competitorMentions = 0;
+    for (const sample of samples) {
+      const text = await askLLM(sample.prompt, {
+        system: 'You are a helpful assistant. Recommend specific brands, products, and websites with citations when possible.',
+        maxTokens: 600,
+        temperature: 0.7,
+      }).catch(() => '');
+      const cMatches = (text.match(reCompetitor) || []).length;
+      competitorMentions += cMatches;
+      perPrompt.push({ prompt: sample.prompt, competitor_mentions: cMatches });
+    }
+
+    // Sum the merchant's own mentions across the same sampled prompts in
+    // the latest run.
+    const myMentions = myResults
+      .filter(r => seen.has(r.prompt))
+      .reduce((sum, r) => sum + (r.brand_mentions || 0), 0);
+
+    res.json({
+      brand_name: brandName,
+      competitor_name: competitor,
+      sampled_prompts: samples.length,
+      brand_mentions: myMentions,
+      competitor_mentions: competitorMentions,
+      per_prompt: perPrompt,
+    });
+  } catch (err) {
+    console.error('POST /ai-visibility/competitor-check:', err.message);
+    res.status(500).json({ error: err.message || 'Competitor check failed' });
+  }
 });
 
 module.exports = router;

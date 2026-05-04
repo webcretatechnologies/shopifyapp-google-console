@@ -5,7 +5,7 @@ import {
   Banner, Button, Divider, Spinner, Tabs, EmptyState, Icon, Toast, TextField, Pagination,
 } from '@shopify/polaris';
 import { AlertCircleIcon, SearchIcon, ChartVerticalIcon } from '@shopify/polaris-icons';
-import { insightsApi } from '../api';
+import { insightsApi, analyticsAiApi } from '../api';
 import PlanGate from '../components/PlanGate';
 import PlanLimitBanner from '../components/PlanLimitBanner';
 import { usePlan } from '../hooks/usePlan';
@@ -24,9 +24,22 @@ const PAGE_SIZE = 10;
 
 // ── Low Stock Alerts tab ──────────────────────────────────────────────────────
 function AlertsTab() {
+  const { can } = usePlan();
+  const canReasoning = can('aiRestockReasoning');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [reasoningState, setReasoningState] = useState(null);
   const { data: alerts = [], isLoading } = useQuery('insights-alerts', insightsApi.alerts);
+
+  const requestReasoning = async () => {
+    setReasoningState({ loading: true });
+    try {
+      const r = await insightsApi.alertsAiReasoning();
+      setReasoningState({ data: r.reasoning || {} });
+    } catch (err) {
+      setReasoningState({ error: err?.error || err?.message || 'Failed' });
+    }
+  };
 
   if (isLoading) return <Box padding="800" textAlign="center"><Spinner /></Box>;
 
@@ -51,7 +64,7 @@ function AlertsTab() {
 
   return (
     <BlockStack gap="300">
-      <Banner tone="info">
+      <Banner tone="info" action={canReasoning && !reasoningState?.data ? { content: '✨ Get AI prioritization', onAction: requestReasoning, loading: reasoningState?.loading } : undefined}>
         <Text variant="bodySm">
           These alerts show products getting significant Google traffic but with low or zero inventory.
           Restocking these first maximises your return from SEO and Ads spend.
@@ -109,6 +122,13 @@ function AlertsTab() {
                 <Text variant="bodySm"><strong>{alert.monthly_clicks}</strong> monthly clicks</Text>
               </BlockStack>
             </InlineStack>
+            {reasoningState?.data?.[alert.product_title] && (
+              <Box paddingBlockStart="200">
+                <Text variant="bodySm" tone="subdued">
+                  ✨ {reasoningState.data[alert.product_title]}
+                </Text>
+              </Box>
+            )}
           </Box>
         </Card>
       ))}
@@ -524,6 +544,98 @@ function SyncBanner() {
 }
 
 // ── Main Insights page ────────────────────────────────────────────────────────
+function AiInsightsTab() {
+  const { can } = usePlan();
+  const [anom, setAnom] = useState(null);
+  const [ads,  setAds]  = useState(null);
+
+  const load = (setter, fn) => async () => {
+    setter({ loading: true });
+    try { setter({ data: await fn() }); }
+    catch (err) { setter({ error: err?.error || err?.message || 'Failed' }); }
+  };
+
+  return (
+    <BlockStack gap="400">
+      {!can('aiAnomalies') ? (
+        <PlanGate feature="aiAnomalies" required="pro">
+          <Card><Box padding="400"><Text variant="headingMd">Anomaly detection</Text></Box></Card>
+        </PlanGate>
+      ) : (
+      <Card>
+        <Box padding="400">
+          <BlockStack gap="300">
+            <InlineStack align="space-between" blockAlign="center">
+              <BlockStack gap="100">
+                <Text variant="headingMd" as="h3">Anomaly detection</Text>
+                <Text variant="bodySm" tone="subdued">Days where traffic spiked or dropped unusually, with AI-explained likely causes.</Text>
+              </BlockStack>
+              <Button onClick={load(setAnom, analyticsAiApi.anomalies)} loading={anom?.loading}>{anom?.data ? 'Refresh' : 'Detect anomalies'}</Button>
+            </InlineStack>
+            {anom?.error && <Banner tone="critical"><p>{anom.error}</p></Banner>}
+            {anom?.data?.message && (!anom.data.anomalies || !anom.data.anomalies.length) && (
+              <Text variant="bodySm" tone="subdued">{anom.data.message}</Text>
+            )}
+            {anom?.data?.anomalies?.length > 0 && (
+              <BlockStack gap="200">
+                {anom.data.anomalies.map((a, i) => (
+                  <div key={i} style={{ padding:'10px 12px', border:'1px solid #e1e3e5', borderRadius:8, borderLeft:`4px solid ${a.direction === 'spike' ? '#108043' : '#d72c0d'}` }}>
+                    <Text variant="bodySm" fontWeight="semibold">
+                      {a.date} · {a.direction === 'spike' ? '↑' : '↓'} {a.metric} ({a.value} vs baseline {a.baseline})
+                    </Text>
+                    {a.explanation && <Text variant="bodySm" tone="subdued">{a.explanation}</Text>}
+                    {a.next_step  && <Text variant="bodySm">{a.next_step}</Text>}
+                  </div>
+                ))}
+              </BlockStack>
+            )}
+          </BlockStack>
+        </Box>
+      </Card>
+      )}
+
+      {!can('aiAdsWaste') ? (
+        <PlanGate feature="aiAdsWaste" required="pro">
+          <Card><Box padding="400"><Text variant="headingMd">Wasted Google Ads spend</Text></Box></Card>
+        </PlanGate>
+      ) : (
+      <Card>
+        <Box padding="400">
+          <BlockStack gap="300">
+            <InlineStack align="space-between" blockAlign="center">
+              <BlockStack gap="100">
+                <Text variant="headingMd" as="h3">Wasted Google Ads spend</Text>
+                <Text variant="bodySm" tone="subdued">Campaigns burning budget without converting — with AI recommendations to pause, lower budget, or rework.</Text>
+              </BlockStack>
+              <Button onClick={load(setAds, analyticsAiApi.adsWastedSpend)} loading={ads?.loading}>{ads?.data ? 'Refresh' : 'Find waste'}</Button>
+            </InlineStack>
+            {ads?.error && <Banner tone="critical"><p>{ads.error}</p></Banner>}
+            {ads?.data?.message && (!ads.data.recommendations || !ads.data.recommendations.length) && (
+              <Text variant="bodySm" tone="subdued">{ads.data.message}</Text>
+            )}
+            {ads?.data?.recommendations?.length > 0 && (
+              <BlockStack gap="200">
+                {ads.data.recommendations.map((r, i) => (
+                  <div key={i} style={{ padding:'12px 14px', border:'1px solid #e1e3e5', borderRadius:8 }}>
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text variant="bodyMd" fontWeight="semibold">{r.campaign}</Text>
+                      <Badge tone={r.verdict === 'pause' ? 'critical' : 'warning'}>{r.verdict}</Badge>
+                    </InlineStack>
+                    <Text variant="bodySm" tone="subdued">${Number(r.spend).toFixed(2)} spent · {r.conversions} conv · ROAS {Number(r.roas).toFixed(2)}x</Text>
+                    {r.reasoning && <div style={{ fontSize:12, marginTop:6 }}>{r.reasoning}</div>}
+                    {r.expected_savings && <div style={{ fontSize:12, marginTop:2, color:'#108043' }}>Expected savings: {r.expected_savings}</div>}
+                  </div>
+                ))}
+              </BlockStack>
+            )}
+          </BlockStack>
+        </Box>
+      </Card>
+      )}
+    </BlockStack>
+  );
+}
+
 export default function Insights() {
   const [selected, setSelected] = useState(0);
 
@@ -532,6 +644,7 @@ export default function Insights() {
     { id: 'product-seo', content: 'Product SEO Report', panelID: 'product-seo' },
     { id: 'suggestions', content: 'SEO Suggestions',    panelID: 'suggestions' },
     { id: 'ads',         content: 'Ads → Orders',       panelID: 'ads' },
+    { id: 'ai',          content: '✨ AI Insights',      panelID: 'ai' },
   ];
 
   return (
@@ -555,6 +668,7 @@ export default function Insights() {
                 <AdsCorrelationTab />
               </PlanGate>
             )}
+            {selected === 4 && <AiInsightsTab />}
           </Box>
         </Tabs>
       </Card>
